@@ -3,12 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a0c" />
+    <meta name="color-scheme" content="dark" />
+
     <title>Frosted Glass</title>
+    <meta name="description" content="A browser instrument that turns a webcam into a pane of fogged glass: a shape behind fog, built for stage backdrops and for footage you keep. Runs entirely on your device." />
+    <link rel="canonical" href="https://sinaida-space.github.io/frosted-glass/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Frosted Glass" />
+    <meta property="og:description" content="A browser instrument that turns a webcam into a pane of fogged glass: a shape behind fog, built for stage backdrops and for footage you keep. Runs entirely on your device." />
+    <meta property="og:url" content="https://sinaida-space.github.io/frosted-glass/" />
+    <meta property="og:image" content="https://sinaida-space.github.io/frosted-glass/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Frosted Glass" />
+    <meta name="twitter:description" content="A browser instrument that turns a webcam into a pane of fogged glass: a shape behind fog, built for stage backdrops and for footage you keep." />
+    <meta name="twitter:image" content="https://sinaida-space.github.io/frosted-glass/og.png" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-ancestors 'none'" />
+
     <style>
       body {
         margin: 0;
         padding: 0;
-        background: #000;
+        background: #0a0a0c;
       }
       canvas {
         display: block;
@@ -20,6 +45,11 @@
   <body>
     <canvas id="stage"></canvas>
     <div id="ui"></div>
+    <div id="site"></div>
+    <noscript>
+      Frosted Glass needs JavaScript and a camera to run. Enable JavaScript and reload this page.
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/site/_devtest.ts"></script>
   </body>
 </html>
