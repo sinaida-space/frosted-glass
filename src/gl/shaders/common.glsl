@@ -60,6 +60,50 @@ float fbm2(vec2 p) {
   return sum;
 }
 
+// Single-value hash of a 3D input, in [0, 1). Same construction as hash12, one axis up.
+float hash13(vec3 p) {
+  vec3 p3 = fract(p * 0.1031);
+  p3 += dot(p3, p3.zyx + 31.32);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// Trilinearly-interpolated 3D value noise in [0, 1]. The 3D twin of valueNoise2.
+float valueNoise3(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f); // smoothstep interpolant
+
+  float n000 = hash13(i + vec3(0.0, 0.0, 0.0));
+  float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
+  float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
+  float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
+  float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
+  float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
+  float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
+  float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
+
+  return mix(
+    mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+    mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+    u.z
+  );
+}
+
+// 3-octave fractal Brownian motion on valueNoise3. Deliberately fewer octaves than fbm2:
+// this one is evaluated once per raymarch step, so octave count is a per-frame cost.
+// Output range is [0, 0.875]; callers remap it.
+float fbm3(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  float freq = 1.0;
+  for (int i = 0; i < 3; i++) {
+    sum += amp * valueNoise3(p * freq);
+    freq *= 2.0;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
 // --- Colour -------------------------------------------------------------
 
 float luminance(vec3 c) {
