@@ -47,7 +47,7 @@ export const DEFAULT_PARAMS: GlassParams = {
   lightAzimuth: -0.7,
   lightElevation: 0.35,
   lightIntensity: 1.0,
-  shafts: 0.45,
+  shafts: 0.7,
   glassColor: [0.94, 0.94, 0.95],
   silhouetteColor: [0.02, 0.02, 0.03],
   lightColor: [1.0, 0.97, 0.92],
