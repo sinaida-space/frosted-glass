@@ -15,7 +15,9 @@ export interface PrivacyPanel {
  */
 export function installPrivacyPanel(root: HTMLElement): PrivacyPanel {
   const overlay = document.createElement('div')
-  overlay.className = 'fg-overlay'
+  // fg-overlay-top: the privacy panel can be opened from inside the welcome gate
+  // (also an .fg-overlay), so it needs to stack above it — see site.css.
+  overlay.className = 'fg-overlay fg-overlay-top'
   overlay.hidden = true
   overlay.innerHTML = `
     <div class="fg-panel" role="dialog" aria-modal="true" aria-labelledby="fg-privacy-title">

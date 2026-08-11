@@ -54,8 +54,10 @@ export function healDiagram(): string {
     <g class="fg-diagram-hand-left" color="currentColor">
       ${HAND(48, 45)}
     </g>
-    <g class="fg-diagram-hand-right" color="currentColor" transform="scale(-1,1)">
-      ${HAND(-152, 45)}
+    <g transform="scale(-1,1)">
+      <g class="fg-diagram-hand-right" color="currentColor">
+        ${HAND(-152, 45)}
+      </g>
     </g>
   </svg>`
 }

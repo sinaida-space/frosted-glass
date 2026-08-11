@@ -61,12 +61,17 @@ function compatibilityIssue(): CameraFailure | null {
 }
 
 const DISTANCE_LABELS: Record<DistanceChoice, string> = {
-  0.6: 'Arm’s length: 0.6 m',
-  1.0: 'Sitting back: 1.0 m',
-  2.0: 'Standing back: 2.0 m',
+  0.6: 'Arm’s length: 0.6 m',
+  1.0: 'Sitting back: 1.0 m',
+  2.0: 'Standing back: 2.0 m',
 }
 
-export async function runWelcome(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => void): Promise<void> {
+export interface PrivacyHandle {
+  open: () => void
+  readonly isOpen: boolean
+}
+
+export async function runWelcome(root: HTMLElement, deps: SiteDeps, privacy: PrivacyHandle): Promise<void> {
   const params = new URLSearchParams(location.search)
   const forceFull = params.get('welcome') === '1'
   const alreadyWelcomed = !forceFull && localStorage.getItem(WELCOME_KEY) !== null
@@ -83,7 +88,7 @@ export async function runWelcome(root: HTMLElement, deps: SiteDeps, onOpenPrivac
     // "replay the full gate" was chosen — fall through to the full sequence
   }
 
-  await showFullGate(root, deps, onOpenPrivacy)
+  await showFullGate(root, deps, privacy)
 }
 
 /* ---------------------------------------------------------------------- */
@@ -166,7 +171,7 @@ function showResume(root: HTMLElement, deps: SiteDeps): Promise<boolean> {
 /* The full four-step gate                                                */
 /* ---------------------------------------------------------------------- */
 
-function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => void): Promise<void> {
+function showFullGate(root: HTMLElement, deps: SiteDeps, privacy: PrivacyHandle): Promise<void> {
   return new Promise((resolve) => {
     const STEP_LABELS = ['What this is', 'What it costs you', 'Calibration', 'The three rites']
     let stepIndex = 0
@@ -206,8 +211,8 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
           <p class="fg-step-label">Step 3 of 4: Calibration</p>
           <h2>Find your place</h2>
           <p>Sit or stand where you will actually be for the piece, facing the camera. Then choose that distance below.</p>
-          <div class="fg-loadbar" data-role="loadbar"><span></span></div>
-          <p class="fg-small" data-role="load-label">Waiting to start</p>
+          <div class="fg-loadbar" data-role="loadbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Waiting to start"><span></span></div>
+          <p class="fg-small" data-role="load-label" aria-live="polite">Waiting to start</p>
           <fieldset class="fg-distance-choices" data-role="distance-fieldset">
             <legend class="fg-step-label" style="margin:0">Distance</legend>
             ${([0.6, 1.0, 2.0] as DistanceChoice[])
@@ -261,7 +266,8 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
     const progressItems = Array.from(overlay.querySelectorAll<HTMLLIElement>('.fg-progress li'))
     const steps = Array.from(overlay.querySelectorAll<HTMLElement>('.fg-step'))
 
-    const loadbarSpan = overlay.querySelector('[data-role="loadbar"] span') as HTMLElement
+    const loadbar = overlay.querySelector('[data-role="loadbar"]') as HTMLElement
+    const loadbarSpan = loadbar.querySelector('span') as HTMLElement
     const loadLabel = overlay.querySelector('[data-role="load-label"]') as HTMLElement
     const readout = overlay.querySelector('[data-role="readout"]') as HTMLElement
     const cameraError = overlay.querySelector('[data-role="camera-error"]') as HTMLElement
@@ -274,8 +280,12 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
     })
 
     function renderLoad(): void {
-      loadbarSpan.style.width = `${Math.round(Math.min(1, Math.max(0, loadedFraction)) * 100)}%`
-      loadLabel.textContent = loadedFraction >= 1 ? 'Ready' : loadedLabel
+      const pct = Math.round(Math.min(1, Math.max(0, loadedFraction)) * 100)
+      const text = loadedFraction >= 1 ? 'Ready' : loadedLabel
+      loadbarSpan.style.width = `${pct}%`
+      loadLabel.textContent = text
+      loadbar.setAttribute('aria-valuenow', String(pct))
+      loadbar.setAttribute('aria-valuetext', text)
     }
     renderLoad()
 
@@ -302,7 +312,7 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
     // --- Step 2: what it costs / camera grant ---
     steps[1]?.querySelector('[data-action="open-privacy"]')?.addEventListener('click', (e) => {
       e.preventDefault()
-      onOpenPrivacy()
+      privacy.open()
     })
     const grantBtn = steps[1]?.querySelector('[data-action="grant"]') as HTMLButtonElement
     grantBtn?.addEventListener('click', () => {
@@ -330,7 +340,7 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
         const d = deps.getDistance()
         readout.textContent = d === null
           ? 'Detected distance: not yet visible'
-          : `Detected distance: ${d.toFixed(2)} m`
+          : `Detected distance: ${d.toFixed(2)} m`
       }, 200)
     }
     function stopReadout(): void {
@@ -367,9 +377,11 @@ function showFullGate(root: HTMLElement, deps: SiteDeps, onOpenPrivacy: () => vo
 
     // Focus trap for the whole gate. Escape never dismisses it — the gate is
     // dismissible only by completing it, on every step, not only the permission one.
-    trapFocus(panel, () => document.body.contains(overlay))
+    // Stands down while the privacy panel is open on top of it, so the two
+    // overlays don't fight over Tab.
+    trapFocus(panel, () => document.body.contains(overlay) && !privacy.isOpen)
     function onEscape(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && document.body.contains(overlay)) e.preventDefault()
+      if (e.key === 'Escape' && document.body.contains(overlay) && !privacy.isOpen) e.preventDefault()
     }
     document.addEventListener('keydown', onEscape)
 
