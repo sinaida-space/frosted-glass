@@ -157,6 +157,17 @@ export class App {
   private lastFrameMs = 0
   private startMs = 0
 
+  // --- frame cost ---
+  /**
+   * One reused TIME_ELAPSED query. WebGL cannot nest them, so the frame after a query is
+   * issued simply does not issue one; at 60 fps that still samples the GPU every other
+   * frame, which is far more often than the 60-frame window needs.
+   */
+  private gpuQuery: WebGLQuery | null = null
+  private gpuQueryInFlight = false
+  private gpuMs = 0
+  private cpuMs = 0
+
   // --- adaptive quality ---
   private level: QualityLevel = 'high'
   private pinnedLevel: QualityLevel | null = null
@@ -407,6 +418,8 @@ export class App {
 
     const f: FrameContext = { ctx: this.ctx, time: (now - this.startMs) / 1000, dt, params: p }
 
+    this.beginGpuTimer()
+
     // 1. Fog, behind everything, through the head-coupled off-axis frustum.
     this.fog.setEye(frame.face, dt, p.parallax)
     this.fog.render(f)
@@ -427,9 +440,50 @@ export class App {
     // 5. To the screen.
     this.present()
 
-    const frameMs = performance.now() - now
+    this.endGpuTimer()
+    this.cpuMs = performance.now() - now
+    this.pollGpuTimer()
+
+    // The cost that decides the quality level is whichever side of the pipeline is the
+    // bottleneck. Wall-clock time around the draw calls only measures command submission
+    // (2-3 ms here), and the rAF interval is pinned at the vsync period whenever the app
+    // is keeping up, so neither one on its own can tell headroom from saturation.
+    const frameMs = Math.max(this.cpuMs, this.gpuMs)
     this.updateAdaptiveQuality(frameMs)
     if (this.debugOn) this.renderDebug(frame, frameMs)
+  }
+
+  private beginGpuTimer(): void {
+    const ext = this.ctx.caps.timerQuery
+    if (!ext || this.gpuQueryInFlight) return
+    const gl = this.ctx.gl
+    if (!this.gpuQuery) this.gpuQuery = gl.createQuery()
+    if (!this.gpuQuery) return
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, this.gpuQuery)
+    this.gpuQueryInFlight = true
+    this.gpuQueryOpen = true
+  }
+
+  private gpuQueryOpen = false
+
+  private endGpuTimer(): void {
+    const ext = this.ctx.caps.timerQuery
+    if (!ext || !this.gpuQueryOpen) return
+    this.ctx.gl.endQuery(ext.TIME_ELAPSED_EXT)
+    this.gpuQueryOpen = false
+  }
+
+  private pollGpuTimer(): void {
+    const ext = this.ctx.caps.timerQuery
+    const q = this.gpuQuery
+    if (!ext || !q || !this.gpuQueryInFlight || this.gpuQueryOpen) return
+    const gl = this.ctx.gl
+    if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) return
+    // A disjoint means the GPU was interrupted (a context switch, a clock change) and the
+    // elapsed count is meaningless. Throw the sample away rather than let it force a step.
+    const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT) as boolean
+    if (!disjoint) this.gpuMs = (gl.getQueryParameter(q, gl.QUERY_RESULT) as number) / 1e6
+    this.gpuQueryInFlight = false
   }
 
   private present(): void {
@@ -455,6 +509,7 @@ export class App {
       'white-space:pre;pointer-events:none;border:1px solid #2a2a2a'
     document.body.appendChild(el)
     this.debugEl = el
+    ;(window as unknown as { __fg?: App }).__fg = this
 
     // Digits 1-5 select an intermediate target, 0 goes back to the real output. The
     // handler runs in the capture phase and stops propagation so the rig's preset
@@ -478,7 +533,7 @@ export class App {
     const c = this.silhouette.contact
     const view = this.debugViews[this.debugView] ?? this.debugViews[0]!
     el.textContent = [
-      `frame  ${frameMs.toFixed(2)} ms (mean ${mean.toFixed(2)} over ${this.frameTimes.length})`,
+      `frame  ${frameMs.toFixed(2)} ms  cpu ${this.cpuMs.toFixed(2)}  gpu ${this.gpuMs.toFixed(2)}  mean ${mean.toFixed(2)}/${this.frameTimes.length}`,
       `infer  ${(this.tracker?.inferenceMs ?? 0).toFixed(2)} ms  degraded=${this.tracker?.degraded ?? false}`,
       `qual   ${this.level}${this.pinnedLevel ? ' (pinned)' : ''}  scale ${this.effectiveRenderScale().toFixed(2)}  ${this.ctx.width}x${this.ctx.height}`,
       `glass  ${this.shatter.state}`,
@@ -506,6 +561,7 @@ export class App {
     this.silhouette?.dispose()
     this.fog?.dispose()
     this.blit?.dispose()
+    if (this.gpuQuery) this.ctx.gl.deleteQuery(this.gpuQuery)
     this.tracker?.dispose()
   }
 }

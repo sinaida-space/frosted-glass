@@ -1,9 +1,21 @@
 /** WebGL2 context creation, capability detection and resolution management. */
 
+/**
+ * EXT_disjoint_timer_query_webgl2, as much of it as the app uses. WebGL has no synchronous
+ * way to ask how long the GPU took, and wall-clock timing around the draw calls only ever
+ * measures command submission - which on this project is under 3 ms while the GPU is doing
+ * ten times that. Without this extension the adaptive quality ladder is blind.
+ */
+export interface TimerQueryExt {
+  TIME_ELAPSED_EXT: number
+  GPU_DISJOINT_EXT: number
+}
+
 export interface GLCaps {
   colorBufferFloat: boolean
   floatLinear: boolean
   maxTextureSize: number
+  timerQuery: TimerQueryExt | null
 }
 
 export interface GLContext {
@@ -38,8 +50,9 @@ export function createGLContext(canvas: HTMLCanvasElement): GLContext {
   const floatLinear = gl.getExtension('OES_texture_float_linear') !== null
 
   const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
+  const timerQuery = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerQueryExt | null
 
-  const caps: GLCaps = { colorBufferFloat, floatLinear, maxTextureSize }
+  const caps: GLCaps = { colorBufferFloat, floatLinear, maxTextureSize, timerQuery }
 
   const ctx: GLContext = {
     gl,
@@ -51,7 +64,8 @@ export function createGLContext(canvas: HTMLCanvasElement): GLContext {
   }
 
   console.log(
-    `[gl] caps: EXT_color_buffer_float=${caps.colorBufferFloat} OES_texture_float_linear=${caps.floatLinear} maxTextureSize=${caps.maxTextureSize}`
+    `[gl] caps: EXT_color_buffer_float=${caps.colorBufferFloat} OES_texture_float_linear=${caps.floatLinear} ` +
+      `EXT_disjoint_timer_query_webgl2=${caps.timerQuery !== null} maxTextureSize=${caps.maxTextureSize}`
   )
 
   return ctx

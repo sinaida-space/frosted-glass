@@ -378,9 +378,25 @@ html[data-ui-hidden] #ui {
 /* Adaptive-quality chip in the panel header. A button, so it is focusable and can be
    activated from the keyboard; the level colour is the only signal that carries meaning,
    and it is doubled by the text so it never depends on colour alone. */
+.fg-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--fg-chrome-lo);
+}
+
+.fg-statusbar__label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-text);
+}
+
 .fg-quality-chip {
   cursor: pointer;
-  min-width: 0;
+  min-height: 24px;
   white-space: nowrap;
 }
 .fg-quality-chip[data-level='medium'] { color: var(--fg-ink); }
