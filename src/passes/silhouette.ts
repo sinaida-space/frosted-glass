@@ -15,8 +15,11 @@ import splatFrag from '../gl/shaders/proximity-splat.frag.glsl?raw'
 const PROXIMITY_W = 256
 const PROXIMITY_H = 144
 
-/** 2 hands x 21 landmarks, plus one face splat and one torso splat. */
-const MAX_SPLATS = 2 * 21 + 2
+/**
+ * 2 hands x (21 landmarks + 5 synthesised palm-interior points), plus a face and a
+ * torso splat. See PALM_FILL_INDICES for why the palm needs points of its own.
+ */
+const MAX_SPLATS = 2 * 26 + 2
 /** centre.xy, radius.xy, dz, weight, confidence */
 const FLOATS_PER_SPLAT = 7
 
@@ -44,10 +47,59 @@ const MAX_DZ = 8
  * same hand across the room is a thumbnail, and one radius cannot serve both. Scaling by
  * the tracked wrist-to-middle-MCP span makes the splat follow the hand on screen.
  *
- * 0.85 puts a single landmark's disc at roughly the radius of the whole hand blob, so the
- * 21 of them overlap into one solid patch with a little margin and no more.
+ * The value is ONE INTER-LANDMARK SPACING, which is all a splat has to cover: along a
+ * finger, MCP -> PIP is 0.45 of the wrist-to-MCP span, and across the palm the synthesised
+ * points below halve the 0.85-span wrist-to-MCP gap to 0.425. At exactly one spacing the
+ * Gaussian is still worth 0.44 at the midpoint between two neighbours, so the hand comes
+ * out solid.
+ *
+ * It used to be 0.85 - the radius of the whole hand blob. A hand at 5 cm behind a pane
+ * 45 cm away subtends 0.60 NDC, so every one of its landmarks painted a 270 px disc, and
+ * the disc reached hundreds of pixels past the hand onto the body. Measured on a synthetic
+ * frame with a hand at 0.05 m over a torso at 0.90 m, a clear torso point 300 px from the
+ * hand resolved 0.218 m. At 0.45 the same point reads 0.878.
+ *
+ * Shrinking this ALONE is not a fix and makes the palm worse - at 0.25 (the "span/4" that
+ * looks right on paper) the palm interior falls between the wrist and the MCP splats and
+ * resolves to the torso's depth, 0.899 instead of 0.05.
  */
-const HAND_SPLAT_SPAN_SCALE = 0.85
+const HAND_SPLAT_SPAN_SCALE = 0.45
+
+/**
+ * Landmark pairs whose midpoints get a splat of their own, plus their centroid.
+ *
+ * MediaPipe puts no landmark inside the palm: the nearest ones are the wrist and the four
+ * MCPs, 0.85 of a span apart. That gap is what forced the old radius to be as wide as the
+ * whole hand. Sampling the palm directly is what lets the radius come down.
+ */
+const PALM_FILL_INDICES = [5, 9, 13, 17] as const
+
+/**
+ * Exponent applied to every splat's weight before it is accumulated.
+ *
+ * The resolve divides sum(dz*w) by sum(w), which is an arithmetic mean - and a mean is the
+ * wrong estimator for this quantity. Where a hand at 0.05 m and a torso at 0.90 m both
+ * claim a pixel, their mean is a depth that describes neither surface, and the composite
+ * paints the middle of a pressed palm at 161/255 instead of 77, brighter than the fingers
+ * around it. What the camera actually sees at a pixel is ONE surface, so the estimator has
+ * to be a mode: whichever body has the most evidence here wins, and the loser's depth is
+ * suppressed rather than averaged in. Raising w to a power does exactly that, and degrades
+ * back to the mean where the evidence really is equal.
+ *
+ * 4 is the knee. Measured on a hand at 0.05 m over a torso at 0.90 m, a clear torso point
+ * resolves 0.218 at power 1, 0.498 at 3, 0.878 at 4, and the whole leak profile is
+ * unchanged at 5 and 6 - so nothing above 4 buys anything, and every extra power costs
+ * dynamic range in the RGBA16F accumulation.
+ *
+ * The rejected alternative was a confidence-weighted soft MINIMUM over depth, on the
+ * argument that the camera sees the nearest surface. It fails, twice, and both failures
+ * are the same mistake: a splat's disc is a guess at where a surface is, not a measurement
+ * of its extent, so preferring the near depth wherever a near disc reaches claims torso
+ * for the hand. The same clear torso point resolves 0.157 - WORSE than doing nothing - and
+ * with no hand in frame at all it smears the 0.18 m face-to-torso step over 300 px of
+ * chest instead of 80, flattening the body toward the face's depth.
+ */
+const SPLAT_WEIGHT_POWER = 4
 /**
  * How much an edge-on palm shrinks its splats. The spec's original term swung the radius
  * by 56% between flat and edge-on, which is what dragged the hand's outer pixels off the
@@ -60,10 +112,18 @@ const HAND_SPLAT_MIN_RADIUS = 0.04
 const HAND_SPLAT_MAX_RADIUS = 0.5
 
 /**
- * Weight at which a proximity pixel counts as fully attributed during the fill. Matches
- * the 4x in the resolve's `saturate(P.g * 4.0)`, so "attributed" means one thing.
+ * Raw splat weight at which a proximity pixel counts as fully attributed - i.e. before
+ * SPLAT_WEIGHT_POWER is applied.
  */
-const FILL_WEIGHT_FULL = 0.25
+const ATTRIBUTED_RAW_WEIGHT = 0.25
+/**
+ * The same threshold in the units the buffer actually holds. It has to track the power:
+ * the accumulation stores w^p, so comparing it against the raw 0.25 would declare almost
+ * the whole body unattributed and hand it to the push-pull fill, which then answers from
+ * a coarse level where the hand and the torso are averaged together again - the exact
+ * bleed this change exists to remove, re-entering by the back door.
+ */
+const FILL_WEIGHT_FULL = Math.pow(ATTRIBUTED_RAW_WEIGHT, SPLAT_WEIGHT_POWER)
 /** Levels below the 256x144 proximity buffer. The coarsest is 8x5, which spans the frame. */
 const FILL_LEVELS = 5
 
@@ -81,27 +141,27 @@ function safeDz(distanceM: number, glassDistance: number): number {
 /**
  * Per-landmark splat radius in NDC-y, derived from how big the hand actually looks.
  *
- * `spanPx` is the wrist to middle-finger-MCP length in video pixels, so spanPx/videoWidth
- * is the hand's apparent size as a fraction of the frame. NDC spans 2 units across the
- * short axis and the radius argument is NDC-y, hence the 2 and the video aspect.
+ * `spanPx` is the wrist to middle-finger-MCP length in VIDEO pixels, and `ndcYPerVideoPx`
+ * converts that to NDC-y on the canvas through the same `cover` fit the shader samples
+ * with. Going via the video's own aspect instead would ignore the crop, and on a 4:3
+ * webcam shown on a 16:9 canvas every splat would come out 25% smaller than the hand it
+ * is meant to describe - which matters now that the radius means one inter-landmark
+ * spacing rather than "about the size of a hand".
  *
- * Falls back to the old constant-NDC formula when the tracker has no usable span, which
- * happens on the first frames and whenever the wrist-to-MCP vector is degenerate.
+ * Falls back to a constant NDC radius when the tracker has no usable span, which happens
+ * on the first frames and whenever the wrist-to-MCP vector is degenerate.
  */
 function handSplatRadius(
   spanPx: number,
   palmFlatness: number,
-  videoWidth: number,
-  videoHeight: number
+  ndcYPerVideoPx: number
 ): number {
   const flatnessTerm = 1 - HAND_SPLAT_FLATNESS_DROP * (1 - clamp(palmFlatness, 0, 1))
-  if (!Number.isFinite(spanPx) || spanPx <= 0 || videoWidth <= 0 || videoHeight <= 0) {
+  if (!Number.isFinite(spanPx) || spanPx <= 0 || !(ndcYPerVideoPx > 0)) {
     return 0.09 + 0.05 * clamp(palmFlatness, 0, 1)
   }
-  const videoAspect = videoWidth / videoHeight
-  const spanNdc = 2 * (spanPx / videoWidth) * videoAspect
   return clamp(
-    HAND_SPLAT_SPAN_SCALE * spanNdc * flatnessTerm,
+    HAND_SPLAT_SPAN_SCALE * spanPx * ndcYPerVideoPx * flatnessTerm,
     HAND_SPLAT_MIN_RADIUS,
     HAND_SPLAT_MAX_RADIUS
   )
@@ -262,6 +322,7 @@ export class SilhouettePass implements Pass {
   private splatBuffer: WebGLBuffer
   private splatData = new Float32Array(MAX_SPLATS * FLOATS_PER_SPLAT)
   private splatCount = 0
+  private weightPowerLoc: WebGLUniformLocation | null = null
 
   private resolveProgram: Program
 
@@ -331,6 +392,7 @@ export class SilhouettePass implements Pass {
     this.pushProgram = new Program(ctx, FILL_PUSH_FRAG_SRC)
 
     this.splatProgram = linkSplatProgram(gl)
+    this.weightPowerLoc = gl.getUniformLocation(this.splatProgram, 'uWeightPower')
 
     const buffer = gl.createBuffer()
     if (!buffer) throw new Error('SilhouettePass: failed to create instance buffer')
@@ -464,6 +526,14 @@ export class SilhouettePass implements Pass {
   private buildSplats(frame: Readonly<TrackingFrame>, glassDistance: number): void {
     this.splatCount = 0
 
+    // One video pixel, in NDC-y on the canvas, through the `cover` fit. The fit scales
+    // both axes by the same factor, so this is the whole conversion.
+    const coverScale =
+      frame.videoWidth > 0 && frame.videoHeight > 0
+        ? Math.max(this.ctx.width / frame.videoWidth, this.ctx.height / frame.videoHeight)
+        : 1
+    const ndcYPerVideoPx = (2 * coverScale) / Math.max(1, this.ctx.height)
+
     const face = frame.face
     const faceDz = face ? safeDz(face.distanceM, glassDistance) : DEFAULT_FACE_DZ
     this.fallbackDz = clamp(faceDz + FALLBACK_DEPTH_OFFSET, 0, MAX_DZ)
@@ -472,12 +542,7 @@ export class SilhouettePass implements Pass {
     // NOT mirrored, NOT NDC) per the tracker - unlike centroidNdc, which is both.
     for (const hand of frame.hands) {
       const dz = safeDz(hand.distanceM, glassDistance)
-      const radius = handSplatRadius(
-        hand.spanPx,
-        hand.palmFlatness,
-        frame.videoWidth,
-        frame.videoHeight
-      )
+      const radius = handSplatRadius(hand.spanPx, hand.palmFlatness, ndcYPerVideoPx)
       const lm = hand.landmarks
       for (let j = 0; j < 21; j++) {
         const x = lm[j * 3]
@@ -485,6 +550,29 @@ export class SilhouettePass implements Pass {
         if (x === undefined || y === undefined) continue
         const [nx, ny] = this.videoUvToScreenNdc(x, y)
         this.pushSplat(nx, ny, radius, dz, hand.confidence, hand.confidence)
+      }
+
+      // Palm interior. Wrist-to-MCP midpoints plus the palm centroid, at the same depth
+      // and confidence as the real landmarks they are interpolated from - they add no
+      // information, they only put samples where MediaPipe leaves a hole.
+      const wristX = lm[0]
+      const wristY = lm[1]
+      if (wristX !== undefined && wristY !== undefined) {
+        let sumX = wristX
+        let sumY = wristY
+        let n = 1
+        for (const m of PALM_FILL_INDICES) {
+          const mx = lm[m * 3]
+          const my = lm[m * 3 + 1]
+          if (mx === undefined || my === undefined) continue
+          sumX += mx
+          sumY += my
+          n++
+          const [mnx, mny] = this.videoUvToScreenNdc((wristX + mx) * 0.5, (wristY + my) * 0.5)
+          this.pushSplat(mnx, mny, radius, dz, hand.confidence, hand.confidence)
+        }
+        const [pnx, pny] = this.videoUvToScreenNdc(sumX / n, sumY / n)
+        this.pushSplat(pnx, pny, radius, dz, hand.confidence, hand.confidence)
       }
     }
 
@@ -556,6 +644,7 @@ export class SilhouettePass implements Pass {
       gl.enable(gl.BLEND)
       gl.blendFunc(gl.ONE, gl.ONE)
       gl.useProgram(this.splatProgram)
+      gl.uniform1f(this.weightPowerLoc, SPLAT_WEIGHT_POWER)
       gl.bindVertexArray(this.splatVao)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.splatCount)
       gl.bindVertexArray(null)
@@ -607,6 +696,7 @@ export class SilhouettePass implements Pass {
     prog.set('uFallbackDz', this.fallbackDz)
     prog.set('uHistoryBlend', this.historyValid ? 0.25 : 0)
     prog.set('uHasMask', this.hasMask ? 1 : 0)
+    prog.set('uWeightFullInv', 1 / FILL_WEIGHT_FULL)
     drawFullscreen(this.ctx)
 
     this.silhouette.swap()

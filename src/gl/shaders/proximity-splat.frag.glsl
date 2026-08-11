@@ -13,6 +13,10 @@ precision highp float;
 //   dz          = sum(dz_i * w_i) / sum(w_i)      -> R / G
 //   attribution = sum(w_i)                        -> G
 //   confidence  = sum(conf_i * w_i) / sum(w_i)    -> B / G
+//
+// The weight that goes into those sums is raised to uWeightPower first, which is what
+// makes the ratio a soft MODE rather than a mean. See SPLAT_WEIGHT_POWER in
+// silhouette.ts for why an arithmetic mean is the wrong estimator here.
 
 in vec2 vLocal;
 in float vDz;
@@ -20,6 +24,9 @@ in float vWeight;
 in float vConf;
 
 out vec4 fragColor;
+
+// Sharpening exponent on the splat weight. 1.0 would restore the plain weighted mean.
+uniform float uWeightPower;
 
 // exp(-3.0): the raw Gaussian value at the quad edge. Subtracting it and renormalising
 // makes the falloff reach exactly zero at d = 1, so splats do not leave a visible ring
@@ -31,7 +38,7 @@ void main() {
   if (d2 >= 1.0) discard; // trim the quad corners to a disc
 
   float gauss = (exp(-3.0 * d2) - EDGE_FALLOFF) / (1.0 - EDGE_FALLOFF);
-  float w = vWeight * gauss;
+  float w = pow(max(vWeight * gauss, 0.0), uWeightPower);
 
   fragColor = vec4(vDz * w, w, vConf * w, 0.0);
 }
