@@ -81,15 +81,23 @@ export function resizeToDisplay(ctx: GLContext, renderScale: number): boolean {
   const { canvas, dpr, caps } = ctx
   const cap = Math.min(MAX_DIMENSION, caps.maxTextureSize)
 
-  const wantW = Math.max(1, canvas.clientWidth * dpr * renderScale)
-  const wantH = Math.max(1, canvas.clientHeight * dpr * renderScale)
+  const wantW = Math.max(1, canvas.clientWidth * dpr)
+  const wantH = Math.max(1, canvas.clientHeight * dpr)
 
   // Clamp both axes by ONE shared factor so the aspect ratio survives. Clamping
   // each axis independently silently distorts the buffer - a 1280x720 canvas at
   // dpr 2 would land on 1920x1440 (4:3) instead of 1920x1080 - and that aspect
   // feeds the off-axis frustum, so the parallax would be built for a window
   // that is not the one on screen.
-  const fit = Math.min(1, cap / wantW, cap / wantH)
+  //
+  // renderScale is applied AFTER the cap, not before it. Applied before, a
+  // 1920 CSS-px canvas at dpr 2 asks for 3840 and is capped to 1920 at every
+  // renderScale down to 0.5 - so on any HiDPI display the adaptive ladder's
+  // resolution lever did nothing at all, and only the shader-quality defines
+  // were left doing the work. Scaling the capped size makes renderScale mean
+  // "this fraction of the largest buffer we would ever allocate", which is what
+  // both the ladder and the UI slider are asking for.
+  const fit = Math.min(1, cap / wantW, cap / wantH) * renderScale
   const targetW = Math.max(1, Math.round(wantW * fit))
   const targetH = Math.max(1, Math.round(wantH * fit))
 
