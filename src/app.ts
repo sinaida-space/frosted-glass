@@ -94,18 +94,21 @@ const STEP_UP_FRAMES = 180
  *   2 green channel / uScale     - silhouette depth in metres
  *   3 rgb tone-mapped            - the fog volume's unclamped radiance
  */
+// uMode is a FLOAT, not an int: Program.set() routes every plain number through
+// gl.uniform1f, which is an INVALID_OPERATION against an int uniform and silently leaves
+// it at 0 - so every debug view rendered as raw RGB instead of the channel it names.
 const BLIT_FRAG_SRC = `#version 300 es
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uSrc;
-uniform int uMode;
+uniform float uMode;
 uniform float uScale;
 void main() {
   vec4 s = texture(uSrc, vUv);
   vec3 c;
-  if (uMode == 1) c = vec3(clamp(s.r * uScale, 0.0, 1.0));
-  else if (uMode == 2) c = vec3(clamp(s.g * uScale, 0.0, 1.0));
-  else if (uMode == 3) c = pow(clamp(s.rgb / (1.0 + s.rgb), 0.0, 1.0), vec3(1.0 / 2.2));
+  if (uMode > 2.5) c = pow(clamp(s.rgb / (1.0 + s.rgb), 0.0, 1.0), vec3(1.0 / 2.2));
+  else if (uMode > 1.5) c = vec3(clamp(s.g * uScale, 0.0, 1.0));
+  else if (uMode > 0.5) c = vec3(clamp(s.r * uScale, 0.0, 1.0));
   else c = s.rgb;
   fragColor = vec4(c, 1.0);
 }
