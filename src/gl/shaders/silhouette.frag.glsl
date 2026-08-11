@@ -41,6 +41,7 @@ uniform float uHasMask;      // 0 until the first segmentation result arrives
 // the centre by much more than this are treated as belonging to a different surface and
 // contribute almost nothing - that is what snaps the mask edge onto real finger edges.
 #define BILATERAL_SIGMA 0.09
+#define BILATERAL_RADIUS 3.0
 
 /**
  * Screen UV (y up, from the fullscreen triangle) -> video/mask texture UV (y down).
@@ -60,11 +61,23 @@ float videoLuma(vec2 uv) {
 
 /**
  * Joint bilateral upsample of the 256^2 mask, guided by the full-resolution video.
- * Five taps (centre + 4-neighbourhood at one mask texel), each weighted by a spatial
- * Gaussian times a luminance-similarity term, normalised by the weight sum.
+ * Five taps - the nearest mask texel plus its 4-neighbourhood - each weighted by a
+ * spatial Gaussian times a luminance-similarity term, normalised by the weight sum.
  *
  * A plain bilinear read of the mask gives a soft edge that wobbles a whole mask texel
  * (about 7 screen pixels at 1080p) frame to frame; this pins it to the image.
+ *
+ * The taps are SNAPPED TO MASK TEXEL CENTRES, and that is the part that makes this work
+ * at all. uMask is a LINEAR-filtered texture, so reading it anywhere off a texel centre
+ * returns a value that has already been bilinearly blended across the very edge this
+ * filter exists to recover. Every tap would then be pre-smeared, the weights would be
+ * reweighting mush, and the output would land within a fraction of a percent of a plain
+ * bilinear upsample - measurably so. Snapping makes each tap a true mask sample, and the
+ * luminance term then picks which of those samples this output pixel actually belongs to.
+ *
+ * The spatial term uses the real sub-texel distance from the output pixel to each tap
+ * centre rather than a fixed kernel, so with a flat guide the filter degrades gracefully
+ * into ordinary interpolation instead of a one-texel blur.
  */
 float refinedMask(vec2 screenUv) {
   const vec2 kOffset[5] = vec2[5](
@@ -74,19 +87,29 @@ float refinedMask(vec2 screenUv) {
     vec2( 0.0,  1.0),
     vec2( 0.0, -1.0)
   );
-  // exp(-0.5) for the four unit-distance taps: the spatial half of the filter.
-  const float kSpatial[5] = float[5](1.0, 0.60653066, 0.60653066, 0.60653066, 0.60653066);
 
   vec2 centre = videoUv(screenUv);
   float lumaCentre = videoLuma(centre);
 
+  // Position of this output pixel in mask-texel units, and the nearest texel centre.
+  vec2 texelPos = centre / uMaskTexel - 0.5;
+  vec2 nearest = floor(texelPos + 0.5);
+
   float sum = 0.0;
   float wsum = 0.0;
   for (int i = 0; i < 5; i++) {
-    vec2 uv = centre + kOffset[i] * uMaskTexel;
+    vec2 tap = nearest + kOffset[i] * BILATERAL_RADIUS;
+    vec2 uv = (tap + 0.5) * uMaskTexel;
+
     float m = texture(uMask, uv).r;
+
+    vec2 d = tap - texelPos;
+    float spatial = exp(-0.5 * dot(d, d) / (BILATERAL_RADIUS * BILATERAL_RADIUS));
+
     float dl = videoLuma(uv) - lumaCentre;
-    float w = kSpatial[i] * exp(-(dl * dl) / (BILATERAL_SIGMA * BILATERAL_SIGMA));
+    float range = exp(-(dl * dl) / (BILATERAL_SIGMA * BILATERAL_SIGMA));
+
+    float w = spatial * range;
     sum += m * w;
     wsum += w;
   }
