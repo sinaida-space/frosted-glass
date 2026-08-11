@@ -173,6 +173,9 @@ export class App {
   private pinnedLevel: QualityLevel | null = null
   private frameTimes: number[] = []
   private frameTimeSum = 0
+  /** Delivered rAF-to-rAF interval, the ground truth for "are we holding 60". */
+  private intervals: number[] = []
+  private intervalSum = 0
   private slowFrames = 0
   private fastFrames = 0
   private qualityListeners = new Set<() => void>()
@@ -346,15 +349,19 @@ export class App {
     this.emitQuality()
   }
 
-  private updateAdaptiveQuality(frameMs: number): void {
+  private updateAdaptiveQuality(frameMs: number, intervalMs: number): void {
     this.frameTimes.push(frameMs)
     this.frameTimeSum += frameMs
+    this.intervals.push(intervalMs)
+    this.intervalSum += intervalMs
     if (this.frameTimes.length > FRAME_WINDOW) {
       this.frameTimeSum -= this.frameTimes.shift()!
+      this.intervalSum -= this.intervals.shift()!
     }
     if (this.frameTimes.length < FRAME_WINDOW) return
 
     const mean = this.frameTimeSum / this.frameTimes.length
+    const meanInterval = this.intervalSum / this.intervals.length
 
     // Pinned by the user, or pinned for the length of a recording: never adapt.
     if (this.pinnedLevel || this.lockedLevel) return
@@ -371,7 +378,15 @@ export class App {
       return
     }
 
-    if (mean > STEP_DOWN_MS) {
+    // Stepping DOWN needs BOTH the measured work and the delivered frame interval to be
+    // over budget. TIME_ELAPSED is not equally trustworthy on every driver - on the
+    // virtualised GPU this was verified against it over-reports by roughly 3x - and a
+    // ladder that degrades a build which is demonstrably delivering 60 fps is worse than
+    // one that occasionally holds a level too long. The interval is the ground truth for
+    // "we are not holding 60"; the work estimate is the only thing that can see headroom,
+    // so it alone governs stepping UP. If a driver over-reports, the app simply never
+    // promotes itself, which is the safe direction to fail in.
+    if (mean > STEP_DOWN_MS && meanInterval > STEP_DOWN_MS) {
       this.fastFrames = 0
       this.slowFrames++
       if (this.slowFrames >= STEP_DOWN_FRAMES) {
@@ -399,8 +414,9 @@ export class App {
     this.rafHandle = requestAnimationFrame(this.frame)
 
     const now = performance.now()
+    const intervalMs = now - this.lastFrameMs
     // Clamped so a backgrounded tab does not launch every shard into orbit on return.
-    const dt = Math.min((now - this.lastFrameMs) / 1000, 0.05)
+    const dt = Math.min(intervalMs / 1000, 0.05)
     this.lastFrameMs = now
 
     const p = params.get()
@@ -449,7 +465,7 @@ export class App {
     // (2-3 ms here), and the rAF interval is pinned at the vsync period whenever the app
     // is keeping up, so neither one on its own can tell headroom from saturation.
     const frameMs = Math.max(this.cpuMs, this.gpuMs)
-    this.updateAdaptiveQuality(frameMs)
+    this.updateAdaptiveQuality(frameMs, Math.min(intervalMs, 100))
     if (this.debugOn) this.renderDebug(frame, frameMs)
   }
 
