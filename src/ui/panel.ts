@@ -89,9 +89,22 @@ function button(label: string, variant: '' | 'accent' | 'alarm', onClick: () => 
   return btn
 }
 
+/**
+ * The App's adaptive-quality state, surfaced as a header chip. Structural rather than an
+ * import from `../app` so the panel still mounts standalone with no renderer behind it.
+ */
+export interface QualityChip {
+  getLevel(): 'high' | 'medium' | 'low'
+  getPinned(): 'high' | 'medium' | 'low' | null
+  pin(level: 'high' | 'medium' | 'low' | null): void
+  subscribe(cb: () => void): () => void
+}
+
 export interface PanelDeps {
   rig?: Rig
   recorder?: CanvasRecorder
+  quality?: QualityChip
+  onSelectCamera?: (deviceId: string) => Promise<void>
 }
 
 export interface PanelHandle {
@@ -124,6 +137,37 @@ export function buildPanel(onOpenShortcuts: () => void, deps: PanelDeps = {}): P
   title.textContent = 'Frosted Glass'
   const headerButtons = document.createElement('div')
   headerButtons.className = 'fg-header__buttons'
+
+  // Adaptive-quality chip. Click cycles auto -> high -> medium -> low -> auto, so the
+  // level can be pinned for a take rather than left to move under a recording.
+  const quality = deps.quality
+  if (quality) {
+    const CYCLE: (('high' | 'medium' | 'low') | null)[] = [null, 'high', 'medium', 'low']
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'fg-btn fg-chip fg-quality-chip'
+    const syncChip = () => {
+      const pinned = quality.getPinned()
+      const level = quality.getLevel()
+      chip.textContent = pinned ? `${pinned.toUpperCase()} · PINNED` : `${level.toUpperCase()} · AUTO`
+      chip.dataset.level = level
+      chip.dataset.pinned = String(pinned !== null)
+      chip.setAttribute(
+        'aria-label',
+        pinned
+          ? `Render quality pinned to ${pinned}. Activate to change.`
+          : `Render quality ${level}, adapting automatically. Activate to pin.`,
+      )
+    }
+    chip.addEventListener('click', () => {
+      const i = CYCLE.indexOf(quality.getPinned())
+      quality.pin(CYCLE[(i + 1) % CYCLE.length] ?? null)
+    })
+    syncChip()
+    disposers.push(quality.subscribe(syncChip))
+    headerButtons.appendChild(chip)
+  }
+
   const helpBtn = button('?', '', onOpenShortcuts)
   helpBtn.className = 'fg-btn fg-btn--icon'
   helpBtn.setAttribute('aria-label', 'Show keyboard shortcuts')
@@ -231,9 +275,10 @@ export function buildPanel(onOpenShortcuts: () => void, deps: PanelDeps = {}): P
       body.appendChild(camLabel)
       body.appendChild(camSelect)
 
-      const camControls = installCameraControls(async () => {
-        // wired by #12: real camera switch happens in src/tracking/, this only
-        // remembers the choice and lets task 12 wire the actual switch.
+      // The real switch lands in Tracker.switchCamera via App; installCameraControls
+      // only remembers the choice. Absent deps, the select still persists the pick.
+      const camControls = installCameraControls(async (deviceId) => {
+        await deps.onSelectCamera?.(deviceId)
       })
       camControls
         .list()

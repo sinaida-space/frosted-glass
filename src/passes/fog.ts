@@ -23,9 +23,14 @@ import commonGlsl from '../gl/shaders/common.glsl?raw'
 import volumeGlsl from '../gl/shaders/volume.glsl?raw'
 import fogFragSrc from '../gl/shaders/fog.frag.glsl?raw'
 
-export type FogQuality = 'high' | 'low'
+/**
+ * Three levels, matching the app-wide quality ladder. The pass was written with two
+ * (24 / 16); `medium` keeps that 16-step march and `low` drops to 12, which is where the
+ * banding the temporal blend can still hide starts to become visible.
+ */
+export type FogQuality = 'high' | 'medium' | 'low'
 
-const STEPS_FOR_QUALITY: Record<FogQuality, number> = { high: 24, low: 16 }
+const STEPS_FOR_QUALITY: Record<FogQuality, number> = { high: 24, medium: 16, low: 12 }
 
 /** World-space frequency of the density field. Tuned against a ~2 m wide, 3.5 m deep slab. */
 const NOISE_SCALE = 4.0
@@ -122,7 +127,7 @@ export class FogPass implements Pass {
     return new Program(this.ctx, src, { STEPS: STEPS_FOR_QUALITY[this.quality] })
   }
 
-  /** Drops the march to 16 steps under load. Recompiles, so do not call this per frame. */
+  /** Drops the march under load. Recompiles, so do not call this per frame. */
   setQuality(quality: FogQuality): void {
     if (quality === this.quality) return
     this.quality = quality

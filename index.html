@@ -30,15 +30,23 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-ancestors 'none'" />
 
     <style>
+      html,
       body {
         margin: 0;
         padding: 0;
+        height: 100%;
+        overflow: hidden;
         background: #0a0a0c;
       }
-      canvas {
+      /* Fixed rather than a percentage height: `height: 100%` on a canvas whose parent
+         has auto height resolves to the 150px intrinsic default, which is what the
+         drawing buffer would then have been sized against. */
+      #stage {
         display: block;
-        width: 100%;
-        height: 100%;
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
       }
     </style>
   </head>

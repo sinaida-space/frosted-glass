@@ -7,8 +7,10 @@ export interface FooterDeps {
 /**
  * A low, unobtrusive bar. Hides itself with the rest of the UI (see the
  * `html[data-ui-hidden]` and `:fullscreen` rules in site.css) — no JS needed for that.
- * "Shortcuts" opens task 10's overlay through the same `?` keyboard event the
- * shortcut key itself uses, so the footer needs no import from `src/rig/`.
+ * "Shortcuts" opens task 10's overlay by dispatching `fg:shortcuts-toggle`, the same
+ * event the rig's `?` key dispatches and the overlay listens for, so the footer needs no
+ * import from `src/rig/`. It used to synthesise a `keydown` with `key: '?'` instead,
+ * which worked only for as long as the rig's key parsing stayed exactly as it was.
  */
 export function installFooter(root: HTMLElement, deps: FooterDeps): HTMLElement {
   const footer = document.createElement('footer')
@@ -33,7 +35,7 @@ export function installFooter(root: HTMLElement, deps: FooterDeps): HTMLElement 
   })
 
   footer.querySelector('[data-action="shortcuts"]')?.addEventListener('click', () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
+    window.dispatchEvent(new CustomEvent('fg:shortcuts-toggle'))
   })
 
   return footer
