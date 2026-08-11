@@ -87,19 +87,41 @@ float henyeyGreenstein(float mu, float g) {
  * There is no geometry behind the pane to cast a shadow, so the occluder is invented:
  * an fbm gobo evaluated in the plane perpendicular to the light, drifting slowly. Every
  * point on a given light ray projects to the same gobo coordinate, so the mask is
- * constant along the beam - which is precisely what makes it read as a shaft rather than
- * as blotchy fog. The implication of something offscreen blocking the light is the
- * whole effect.
+ * constant along the beam - which is what makes it read as a shaft rather than as
+ * blotchy fog. The implication of something offscreen blocking the light is the whole
+ * effect.
+ *
+ * The gobo is deliberately ANISOTROPIC, and that is what makes the shafts survive the
+ * raymarch. A view ray is not parallel to the light, so as it crosses the slab its
+ * projection into the gobo plane sweeps sideways - here by about 3 m, against a volume
+ * only about 2 m wide on screen. An isotropic gobo therefore gets averaged out along
+ * every view ray and the result is soft blotches, not beams. Stretching the gobo along
+ * the sweep axis (so it barely changes over those 3 m) while keeping it detailed across
+ * that axis leaves the contrast intact through the integral.
+ *
+ * The sweep axis is the component of the view direction perpendicular to the light.
+ * Using the screen normal (+z, the direction essentially every view ray travels) rather
+ * than the per-pixel ray keeps the gobo a single consistent field in world space, so it
+ * does not swim when the head moves.
  */
-float shaftMask(vec3 p, vec3 lightDir, float time, float shafts) {
-  // Orthonormal basis perpendicular to the light. The branch avoids a degenerate cross
-  // product when the light points nearly straight up or down.
-  vec3 up = abs(lightDir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-  vec3 lt = normalize(cross(lightDir, up));
-  vec3 lb = cross(lightDir, lt);
 
-  vec2 proj = vec2(dot(p, lt), dot(p, lb));
-  float gobo = smoothstep(0.3, 0.75, fbm2(proj * 1.7 + time * 0.02));
+/** Gobo detail across the sweep axis - this is the frequency that becomes the beams. */
+const float SHAFT_FREQ_ACROSS = 4.0;
+/** Gobo frequency along the sweep axis. Low on purpose: see the note above. */
+const float SHAFT_FREQ_ALONG = 0.2;
+
+float shaftMask(vec3 p, vec3 lightDir, float time, float shafts) {
+  // Sweep axis: view direction (+z, out of the screen) projected into the plane
+  // perpendicular to the light. Degenerates only when the light points straight at the
+  // viewer, in which case there is no sweep and any perpendicular axis will do.
+  vec3 sweep = vec3(0.0, 0.0, 1.0) - lightDir.z * lightDir;
+  float sweepLen = length(sweep);
+  vec3 fallback = abs(lightDir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 lAlong = sweepLen > 1e-3 ? sweep / sweepLen : normalize(cross(lightDir, fallback));
+  vec3 lAcross = cross(lightDir, lAlong);
+
+  vec2 proj = vec2(dot(p, lAlong) * SHAFT_FREQ_ALONG, dot(p, lAcross) * SHAFT_FREQ_ACROSS);
+  float gobo = smoothstep(0.3, 0.75, fbm2(proj + time * 0.02));
   return mix(1.0, gobo, shafts);
 }
 
