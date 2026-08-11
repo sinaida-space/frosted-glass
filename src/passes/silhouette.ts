@@ -24,12 +24,48 @@ const FLOATS_PER_SPLAT = 7
 const DEFAULT_FACE_DZ = 1.2
 /** Shoulders read a little further back than the face; this is what gives the body volume. */
 const TORSO_DEPTH_OFFSET = 0.18
-/** Unattributed pixels sit behind the face so they blur out rather than snapping forward. */
+/**
+ * Last-resort depth for a frame with no landmarks anywhere. This used to be the depth of
+ * every unattributed pixel, which put the forearms, elbows, shoulders and hair a metre
+ * behind the hand that they are physically attached to. The push-pull fill below now
+ * covers those; this constant only survives as the root of the pyramid.
+ */
 const FALLBACK_DEPTH_OFFSET = 0.3
 /** Torso splat centre, in video NDC below the eyes. */
 const TORSO_NDC_DROP = 0.55
 
 const MAX_DZ = 8
+
+/**
+ * Per-landmark splat radius as a multiple of the hand's own apparent size.
+ *
+ * A constant NDC radius assumes a hand always occupies about the same slice of the frame.
+ * It does not: a palm pressed against the glass fills a third of the picture while the
+ * same hand across the room is a thumbnail, and one radius cannot serve both. Scaling by
+ * the tracked wrist-to-middle-MCP span makes the splat follow the hand on screen.
+ *
+ * 0.85 puts a single landmark's disc at roughly the radius of the whole hand blob, so the
+ * 21 of them overlap into one solid patch with a little margin and no more.
+ */
+const HAND_SPLAT_SPAN_SCALE = 0.85
+/**
+ * How much an edge-on palm shrinks its splats. The spec's original term swung the radius
+ * by 56% between flat and edge-on, which is what dragged the hand's outer pixels off the
+ * splat and into the fallback. A flat palm really does present more area than an edge-on
+ * one, so the term keeps its job - it just no longer does it hard enough to matter.
+ */
+const HAND_SPLAT_FLATNESS_DROP = 0.15
+/** Splat radius bounds in NDC-y, so a very distant or very close hand stays sane. */
+const HAND_SPLAT_MIN_RADIUS = 0.04
+const HAND_SPLAT_MAX_RADIUS = 0.5
+
+/**
+ * Weight at which a proximity pixel counts as fully attributed during the fill. Matches
+ * the 4x in the resolve's `saturate(P.g * 4.0)`, so "attributed" means one thing.
+ */
+const FILL_WEIGHT_FULL = 0.25
+/** Levels below the 256x144 proximity buffer. The coarsest is 8x5, which spans the frame. */
+const FILL_LEVELS = 5
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v))
@@ -40,6 +76,35 @@ function safeDz(distanceM: number, glassDistance: number): number {
   const dz = distanceM - glassDistance
   if (!Number.isFinite(dz)) return MAX_DZ
   return clamp(dz, 0, MAX_DZ)
+}
+
+/**
+ * Per-landmark splat radius in NDC-y, derived from how big the hand actually looks.
+ *
+ * `spanPx` is the wrist to middle-finger-MCP length in video pixels, so spanPx/videoWidth
+ * is the hand's apparent size as a fraction of the frame. NDC spans 2 units across the
+ * short axis and the radius argument is NDC-y, hence the 2 and the video aspect.
+ *
+ * Falls back to the old constant-NDC formula when the tracker has no usable span, which
+ * happens on the first frames and whenever the wrist-to-MCP vector is degenerate.
+ */
+function handSplatRadius(
+  spanPx: number,
+  palmFlatness: number,
+  videoWidth: number,
+  videoHeight: number
+): number {
+  const flatnessTerm = 1 - HAND_SPLAT_FLATNESS_DROP * (1 - clamp(palmFlatness, 0, 1))
+  if (!Number.isFinite(spanPx) || spanPx <= 0 || videoWidth <= 0 || videoHeight <= 0) {
+    return 0.09 + 0.05 * clamp(palmFlatness, 0, 1)
+  }
+  const videoAspect = videoWidth / videoHeight
+  const spanNdc = 2 * (spanPx / videoWidth) * videoAspect
+  return clamp(
+    HAND_SPLAT_SPAN_SCALE * spanNdc * flatnessTerm,
+    HAND_SPLAT_MIN_RADIUS,
+    HAND_SPLAT_MAX_RADIUS
+  )
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -78,6 +143,89 @@ function linkSplatProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return prog
 }
 
+/**
+ * Pull half of the push-pull fill: a 2x2 box downsample of the (dz*w, w, conf*w)
+ * accumulation. Because the channels are premultiplied by weight, a plain sum is already
+ * the correct coarser estimate - the ratio dz = R/G comes out as the weighted mean depth
+ * over the region, which is exactly what the push half needs to extrapolate from.
+ */
+const FILL_PULL_FRAG_SRC = `#version 300 es
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uSrc;
+uniform vec2 uSrcTexel;
+void main() {
+  vec2 o = uSrcTexel * 0.5;
+  vec4 s0 = texture(uSrc, vUv + vec2(-o.x, -o.y));
+  vec4 s1 = texture(uSrc, vUv + vec2( o.x, -o.y));
+  vec4 s2 = texture(uSrc, vUv + vec2(-o.x,  o.y));
+  vec4 s3 = texture(uSrc, vUv + vec2( o.x,  o.y));
+  vec3 sum = (s0.rgb + s1.rgb + s2.rgb + s3.rgb) * 0.25;
+
+  // Alpha is a plain "some real sample lives under this texel" flag, carried up with max
+  // rather than averaged. The weighted sums above shrink by the coverage fraction at
+  // every level - a coarse texel that is a tenth landmark and nine tenths empty ends up
+  // with a tenth of the weight - and if the fill decided whether it had an answer from
+  // that number, large empty regions would fail to fill and drop back to the constant.
+  // Whether an answer exists and how confident it is are different questions.
+  float has = max(
+    max(max(s0.a, step(1e-5, s0.g)), max(s1.a, step(1e-5, s1.g))),
+    max(max(s2.a, step(1e-5, s2.g)), max(s3.a, step(1e-5, s3.g)))
+  );
+  fragColor = vec4(sum, has);
+}
+`
+
+/**
+ * Push half: fill this level's holes from the level below it.
+ *
+ * Where the fine level already carries enough weight, it is kept untouched. Where it does
+ * not - a forearm, an elbow, hair, the outer half of an edge-on palm, anything the 43
+ * landmarks never reached - the depth is taken from the coarser level, which is a
+ * weighted average of whatever real samples sit nearest in screen space. So an
+ * unattributed pixel inherits the depth of the body part it is attached to instead of
+ * teleporting to a constant.
+ *
+ * Depths are un-premultiplied before the blend and re-premultiplied after, because
+ * blending (dz*w) pairs directly would let the heavier side drag the depth rather than
+ * just win the vote.
+ */
+const FILL_PUSH_FRAG_SRC = `#version 300 es
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uFine;
+uniform sampler2D uCoarse;
+uniform float uWeightFull;
+void main() {
+  vec4 f = texture(uFine, vUv);
+  vec4 c = texture(uCoarse, vUv);
+
+  float wf = max(f.g, 0.0);
+  float wc = max(c.g, 0.0);
+
+  float dzF = f.r / max(wf, 1e-4);
+  float dzC = c.r / max(wc, 1e-4);
+  float cnF = f.b / max(wf, 1e-4);
+  float cnC = c.b / max(wc, 1e-4);
+
+  // 1 where this level stands on its own, 0 where it is a hole. Read from the raw pulled
+  // weight, never from an already-filled one, so extrapolated depth can always be
+  // overruled by real samples at a finer level and never compounds down the chain.
+  float a = clamp(wf / uWeightFull, 0.0, 1.0);
+
+  float dz = mix(dzC, dzF, a);
+  float cn = mix(cnC, cnF, a);
+
+  // Once a pixel has an answer it counts as answered, at full weight. Carrying the
+  // coarse level's own (coverage-diluted) weight down instead would shrink at every step
+  // and the fill would fade back into the constant exactly where it is needed most.
+  float has = max(max(f.a, step(1e-5, wf)), c.a);
+  float w = max(wf, has * uWeightFull);
+
+  fragColor = vec4(dz * w, w, cn * w, has);
+}
+`
+
 export interface ContactReport {
   strength: number
   ndc: [number, number]
@@ -97,6 +245,17 @@ export class SilhouettePass implements Pass {
 
   private proximity: RenderTarget
   private silhouette: PingPong
+
+  /**
+   * Push-pull pyramid over the proximity buffer. `pull[k]` is the 2x-decimated chain
+   * (pull[0] is `proximity` itself); `push[k]` is the hole-filled result at that level.
+   * push[0] is the one the resolve reads. The two chains are separate targets because
+   * the resolve still needs the *unfilled* weights to report honest attribution.
+   */
+  private pull: RenderTarget[] = []
+  private push: RenderTarget[] = []
+  private pullProgram: Program
+  private pushProgram: Program
 
   private splatProgram: WebGLProgram
   private splatVao: WebGLVertexArrayObject
@@ -149,6 +308,27 @@ export class SilhouettePass implements Pass {
       format: 'rgba16f',
       filter: 'linear',
     })
+
+    // Pyramid. LINEAR on every level: the push step upsamples the coarse level with
+    // bilinear filtering, which is what makes the filled depth vary smoothly instead of
+    // showing the coarse level's blocks.
+    const pyramidOpts = { format: 'rgba16f' as const, filter: 'linear' as const }
+    this.pull.push(this.proximity)
+    for (let k = 1; k <= FILL_LEVELS; k++) {
+      const w = Math.max(1, PROXIMITY_W >> k)
+      const h = Math.max(1, PROXIMITY_H >> k)
+      this.pull.push(new RenderTarget(ctx, w, h, pyramidOpts))
+    }
+    // push[FILL_LEVELS] aliases the coarsest pull level: nothing coarser to fill from.
+    for (let k = 0; k < FILL_LEVELS; k++) {
+      const w = Math.max(1, PROXIMITY_W >> k)
+      const h = Math.max(1, PROXIMITY_H >> k)
+      this.push.push(new RenderTarget(ctx, w, h, pyramidOpts))
+    }
+    this.push.push(this.pull[FILL_LEVELS]!)
+
+    this.pullProgram = new Program(ctx, FILL_PULL_FRAG_SRC)
+    this.pushProgram = new Program(ctx, FILL_PUSH_FRAG_SRC)
 
     this.splatProgram = linkSplatProgram(gl)
 
@@ -292,7 +472,12 @@ export class SilhouettePass implements Pass {
     // NOT mirrored, NOT NDC) per the tracker - unlike centroidNdc, which is both.
     for (const hand of frame.hands) {
       const dz = safeDz(hand.distanceM, glassDistance)
-      const radius = 0.09 + 0.05 * hand.palmFlatness
+      const radius = handSplatRadius(
+        hand.spanPx,
+        hand.palmFlatness,
+        frame.videoWidth,
+        frame.videoHeight
+      )
       const lm = hand.landmarks
       for (let j = 0; j < 21; j++) {
         const x = lm[j * 3]
@@ -377,7 +562,32 @@ export class SilhouettePass implements Pass {
       gl.disable(gl.BLEND)
     }
 
-    // B. Resolve into the silhouette field.
+    // B. Push-pull hole fill over the proximity buffer.
+    //
+    // Pull: decimate to 8x5, so every level holds the weighted mean depth of a
+    // progressively larger neighbourhood. Push: walk back up, and wherever a level has
+    // too little weight of its own, take the level below's answer. Ten draws at 128x72
+    // and smaller, so it costs nothing.
+    for (let k = 1; k <= FILL_LEVELS; k++) {
+      const src = this.pull[k - 1]!
+      const dstLevel = this.pull[k]!
+      dstLevel.bind()
+      this.pullProgram.use()
+      this.pullProgram.texture('uSrc', src.texture)
+      this.pullProgram.set('uSrcTexel', [1 / src.width, 1 / src.height])
+      drawFullscreen(this.ctx)
+    }
+    for (let k = FILL_LEVELS - 1; k >= 0; k--) {
+      const dstLevel = this.push[k]!
+      dstLevel.bind()
+      this.pushProgram.use()
+      this.pushProgram.texture('uFine', this.pull[k]!.texture)
+      this.pushProgram.texture('uCoarse', this.push[k + 1]!.texture)
+      this.pushProgram.set('uWeightFull', FILL_WEIGHT_FULL)
+      drawFullscreen(this.ctx)
+    }
+
+    // C. Resolve into the silhouette field.
     const dst = this.silhouette.write
     const history = this.silhouette.read
     dst.bind()
@@ -387,6 +597,7 @@ export class SilhouettePass implements Pass {
     prog.texture('uMask', this.maskTexture)
     prog.texture('uVideo', this.videoTexture)
     prog.texture('uProximity', this.proximity.texture)
+    prog.texture('uProximityFilled', this.push[0]!.texture)
     prog.texture('uHistory', history.texture)
     prog.set('uVideoUvScale', this.uvScale)
     prog.set('uVideoUvOffset', this.uvOffset)
@@ -413,6 +624,12 @@ export class SilhouettePass implements Pass {
 
   dispose(): void {
     const gl = this.gl
+    // pull[0] is `proximity` and push[FILL_LEVELS] aliases pull[FILL_LEVELS]; disposing
+    // only the levels this pass allocated keeps that from being a double free.
+    for (let k = 1; k <= FILL_LEVELS; k++) this.pull[k]!.dispose()
+    for (let k = 0; k < FILL_LEVELS; k++) this.push[k]!.dispose()
+    this.pullProgram.dispose()
+    this.pushProgram.dispose()
     this.proximity.dispose()
     this.silhouette.dispose()
     this.resolveProgram.dispose()
