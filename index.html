@@ -27,7 +27,16 @@
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-ancestors 'none'" />
+    <!--
+      script-src has to name cdn.jsdelivr.net and allow wasm compilation. MediaPipe's
+      FilesetResolver appends a <script> tag pointing at vision_wasm_*_internal.js on the
+      CDN, so `script-src 'self'` blocked the tasks-vision runtime outright and the camera
+      could never start; connect-src alone is not enough because the glue is loaded as a
+      script element, not fetched. 'wasm-unsafe-eval' is the narrow grant that lets the
+      .wasm compile without opening up eval().
+      frame-ancestors is ignored in a meta tag and is set as a real header at the edge.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:" />
 
     <style>
       html,

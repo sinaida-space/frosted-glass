@@ -137,11 +137,25 @@ export function buildPanel(onOpenShortcuts: () => void, deps: PanelDeps = {}): P
   title.textContent = 'Frosted Glass'
   const headerButtons = document.createElement('div')
   headerButtons.className = 'fg-header__buttons'
+  const helpBtn = button('?', '', onOpenShortcuts)
+  helpBtn.className = 'fg-btn fg-btn--icon'
+  helpBtn.setAttribute('aria-label', 'Show keyboard shortcuts')
+  headerButtons.appendChild(helpBtn)
+  header.appendChild(title)
+  header.appendChild(headerButtons)
+  panelEl.appendChild(header)
 
-  // Adaptive-quality chip. Click cycles auto -> high -> medium -> low -> auto, so the
-  // level can be pinned for a take rather than left to move under a recording.
+  // Adaptive-quality chip, on a row of its own: the header is only 240px wide and already
+  // carries the collapse and help buttons. Click cycles auto -> high -> medium -> low ->
+  // auto, so the level can be pinned for a take rather than left to move under a recording.
   const quality = deps.quality
   if (quality) {
+    const bar = document.createElement('div')
+    bar.className = 'fg-statusbar'
+    const barLabel = document.createElement('span')
+    barLabel.className = 'fg-statusbar__label'
+    barLabel.textContent = 'Quality'
+    bar.appendChild(barLabel)
     const CYCLE: (('high' | 'medium' | 'low') | null)[] = [null, 'high', 'medium', 'low']
     const chip = document.createElement('button')
     chip.type = 'button'
@@ -165,16 +179,9 @@ export function buildPanel(onOpenShortcuts: () => void, deps: PanelDeps = {}): P
     })
     syncChip()
     disposers.push(quality.subscribe(syncChip))
-    headerButtons.appendChild(chip)
+    bar.appendChild(chip)
+    panelEl.appendChild(bar)
   }
-
-  const helpBtn = button('?', '', onOpenShortcuts)
-  helpBtn.className = 'fg-btn fg-btn--icon'
-  helpBtn.setAttribute('aria-label', 'Show keyboard shortcuts')
-  headerButtons.appendChild(helpBtn)
-  header.appendChild(title)
-  header.appendChild(headerButtons)
-  panelEl.appendChild(header)
 
   // --- GLASS ---
   const glass = track(

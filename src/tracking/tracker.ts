@@ -40,6 +40,17 @@ const HALF_FOV_TAN = Math.tan(Math.PI / 6)
 
 const INFERENCE_BUDGET_MS = 14
 const INFERENCE_WINDOW = 30
+/**
+ * Inference frames discarded before the rolling mean starts.
+ *
+ * The first call into each MediaPipe graph compiles shaders and uploads weights: measured
+ * 7207 ms on the very first frame here. One sample that size holds a 30-frame mean over
+ * the budget for the next 30 frames, which sets `degraded` and drags the whole app's
+ * quality level down before a single real frame has been timed. The segmenter's own
+ * postprocessor warms up later than the graph does - a 112 ms frame was still turning up
+ * several frames in - so the window is wide rather than minimal.
+ */
+const INFERENCE_WARMUP_FRAMES = 10
 
 export interface TrackerOptions {
   deviceId?: string
@@ -120,6 +131,7 @@ export class Tracker {
   private lastVideoWidth = 0
   private frameCounter = 0
   private inferenceHistory: number[] = []
+  private warmupLeft = INFERENCE_WARMUP_FRAMES
   /** Rolling mean inference wall time in ms over the last INFERENCE_WINDOW frames. */
   inferenceMs = 0
   /** Set once the rolling mean exceeds the budget; face detection cadence backs off. */
@@ -399,6 +411,10 @@ export class Tracker {
   }
 
   private pushInferenceMs(ms: number): void {
+    if (this.warmupLeft > 0) {
+      this.warmupLeft--
+      return
+    }
     this.inferenceHistory.push(ms)
     if (this.inferenceHistory.length > INFERENCE_WINDOW) this.inferenceHistory.shift()
     let sum = 0
