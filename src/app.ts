@@ -300,8 +300,12 @@ export class App {
    */
   private onRecorderState(s: 'idle' | 'recording' | 'encoding'): void {
     if (s === 'recording') {
-      this.lockedLevel = this.level
+      // Read the scale BEFORE latching the level: effectiveRenderScale() returns
+      // `lockedScale` as soon as `lockedLevel` is set, so the other order latches the
+      // previous take's value and the buffer jumps resolution on the next resize check -
+      // the exact thing the lock exists to prevent.
       this.lockedScale = this.effectiveRenderScale()
+      this.lockedLevel = this.level
     } else if (s === 'idle') {
       this.lockedLevel = null
     }
