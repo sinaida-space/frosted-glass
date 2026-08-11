@@ -37,6 +37,7 @@ uniform vec2 uOutTexel;     // 1 / output dimensions
 uniform float uFallbackDz;  // faceDz + 0.30, used where no landmark reached this pixel
 uniform float uHistoryBlend; // 0.25 normally; 0 on the first frame after a resize
 uniform float uHasMask;      // 0 until the first segmentation result arrives
+uniform float uWeightFullInv; // 1 / the weight at which a pixel counts as fully attributed
 
 // Luminance tolerance of the joint bilateral filter. Taps whose video luma differs from
 // the centre by much more than this are treated as belonging to a different surface and
@@ -138,7 +139,7 @@ void main() {
   // Attribution is read from the RAW accumulation, not the filled one: B has to keep
   // reporting whether a landmark actually vouched for this pixel, and after the fill
   // every pixel near a body carries weight.
-  float attribution = saturate(texture(uProximity, vUv).g * 4.0);
+  float attribution = saturate(texture(uProximity, vUv).g * uWeightFullInv);
 
   // Depth comes from the FILLED accumulation. Where landmarks reached, the fill leaves
   // their answer untouched; where they did not - forearms, elbows, shoulders, hair, the
@@ -150,7 +151,7 @@ void main() {
   // The constant survives only as the root of the pyramid: on a frame with no landmarks
   // at all, F.g is still zero everywhere and the divide above yields 0, which would read
   // as "touching the glass" - the single most wrong answer available.
-  float filled = saturate(F.g * 4.0);
+  float filled = saturate(F.g * uWeightFullInv);
   float dz = mix(uFallbackDz, dzFilled, filled);
   dz = clamp(dz, 0.0, 8.0);
 
