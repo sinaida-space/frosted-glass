@@ -45,7 +45,7 @@ html[data-ui-hidden] #fg-debug {
   display: none;
 }
 
-.fg-panel {
+#ui .fg-panel {
   pointer-events: auto;
   position: relative;
   height: 100%;
@@ -57,7 +57,7 @@ html[data-ui-hidden] #fg-debug {
   color: var(--fg-text);
 }
 
-.fg-panel::before {
+#ui .fg-panel::before {
   /* CRT scanline overlay, panel background only, never over the canvas */
   content: '';
   position: absolute;
@@ -150,7 +150,7 @@ html[data-ui-hidden] #fg-debug {
 }
 
 /* visible focus rings everywhere, in the brand red */
-.fg-panel :focus-visible {
+#ui .fg-panel :focus-visible {
   outline: 2px solid var(--fg-red-legible);
   outline-offset: 2px;
 }
@@ -545,7 +545,7 @@ html[data-ui-hidden] #fg-debug {
     max-height: 60vh;
   }
 
-  .fg-panel {
+  #ui .fg-panel {
     border-right: none;
     border-top: 1px solid var(--fg-graphite);
     max-height: 60vh;
@@ -572,7 +572,7 @@ html[data-ui-hidden] #fg-debug {
     max-height: 100vh;
   }
 
-  .fg-panel {
+  #ui .fg-panel {
     max-height: 100vh;
   }
 
@@ -592,7 +592,7 @@ html[data-ui-hidden] #fg-debug {
     opacity: 1;
   }
 
-  .fg-panel::before {
+  #ui .fg-panel::before {
     display: none;
   }
 

@@ -37,7 +37,16 @@ interface FullscreenEl extends HTMLElement {
 
 function requestFullscreen(el: HTMLElement): void {
   const e = el as FullscreenEl
-  if (e.requestFullscreen) e.requestFullscreen().catch(() => {})
+  if (e.requestFullscreen) {
+    e.requestFullscreen().catch((err: unknown) => {
+      // Swallowing this left "F does nothing" with no way to tell why.
+      window.dispatchEvent(
+        new CustomEvent('fg:notice', {
+          detail: `Fullscreen was refused by the browser: ${String((err as Error)?.message ?? err)}`,
+        }),
+      )
+    })
+  }
   else if (e.webkitRequestFullscreen) e.webkitRequestFullscreen()
   else if (e.mozRequestFullScreen) e.mozRequestFullScreen()
   else if (e.msRequestFullscreen) e.msRequestFullscreen()
@@ -64,7 +73,11 @@ export function installRig(canvas: HTMLCanvasElement, uiRoot: HTMLElement, recor
 
   function toggleFullscreen(): void {
     if (currentFullscreenElement()) exitFullscreen()
-    else requestFullscreen(canvas)
+    // The document element, not the canvas. Fullscreening the canvas alone takes the
+    // panel, footer and every overlay out of the visible tree, because they are its
+    // siblings - so the operator lost every control and had to press F again blind to
+    // get them back. H already exists for hiding the UI deliberately.
+    else requestFullscreen(document.documentElement)
   }
 
   function armCursorIdle(): void {
@@ -152,10 +165,25 @@ export function installRig(canvas: HTMLCanvasElement, uiRoot: HTMLElement, recor
   }
   window.addEventListener('beforeunload', onBeforeUnload)
 
+  /**
+   * Only text entry should swallow hotkeys. Treating every <input> as a typing target
+   * meant that touching any slider - the first thing anyone does - left it focused and
+   * silently killed F, H, R, Space, C, P and the preset keys until the user clicked
+   * somewhere else. A range, colour, checkbox or button input eats no letters.
+   */
+  const TEXT_ENTRY_TYPES = new Set([
+    'text', 'search', 'email', 'password', 'url', 'tel', 'number',
+    'date', 'datetime-local', 'month', 'week', 'time',
+  ])
+
   function isTypingTarget(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false
+    if (target.isContentEditable) return true
     const tag = target.tagName
-    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable
+    if (tag === 'TEXTAREA') return true
+    if (tag !== 'INPUT') return false
+    const type = (target as HTMLInputElement).type.toLowerCase()
+    return TEXT_ENTRY_TYPES.has(type)
   }
 
   async function toggleRecording(): Promise<void> {

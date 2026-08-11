@@ -123,7 +123,7 @@
    an .fg-overlay at the same z-index — force it above regardless of DOM order. */
 .fg-overlay-top { z-index: 110; }
 
-.fg-panel {
+#site .fg-panel {
   position: relative;
   z-index: 2;
   width: min(640px, 100%);
@@ -136,7 +136,7 @@
   box-shadow: 0 0 40px var(--fg-glow-ambient);
 }
 
-.fg-panel h1 {
+#site .fg-panel h1 {
   font-family: var(--fg-font-display);
   font-weight: 400;
   font-size: clamp(var(--fg-step-3), 3vw + 1rem, var(--fg-step-4));
@@ -171,7 +171,7 @@
   #fg-gate-title::after { animation: none; }
 }
 
-.fg-panel h2 {
+#site .fg-panel h2 {
   font-family: var(--fg-font-display);
   font-weight: 400;
   font-size: var(--fg-step-2);
@@ -183,7 +183,7 @@
   text-wrap: balance;
 }
 
-.fg-panel p {
+#site .fg-panel p {
   font-family: var(--fg-font-body);
   font-weight: 300;
   font-size: var(--fg-step-0);
@@ -197,7 +197,7 @@
    plain ".foo" (0,1,0) because they land on <p> elements inside .fg-panel, and
    the base ".fg-panel p" rule above is (0,1,1) — a bare class would silently
    lose to it and fall back to the default paragraph color. */
-.fg-panel .fg-small,
+#site .fg-panel .fg-small,
 .fg-small {
   font-family: var(--fg-font-body);
   font-weight: 300;
@@ -206,13 +206,13 @@
   color: var(--fg-haze);
 }
 
-.fg-panel a {
+#site .fg-panel a {
   color: var(--fg-red-legible);
   text-decoration-color: var(--fg-gunmetal);
   text-underline-offset: 3px;
 }
 
-.fg-panel a:hover { text-decoration-color: currentColor; }
+#site .fg-panel a:hover { text-decoration-color: currentColor; }
 
 /* ---------- gate progress ---------- */
 
@@ -245,7 +245,7 @@
 .fg-step { display: none; }
 .fg-step[data-active="true"] { display: block; }
 
-.fg-panel .fg-step-label,
+#site .fg-panel .fg-step-label,
 .fg-step-label {
   font-family: var(--fg-font-mono);
   font-size: 0.75rem;
@@ -340,7 +340,7 @@
   box-shadow: 0 0 10px var(--fg-glow-ambient);
 }
 
-.fg-panel .fg-readout,
+#site .fg-panel .fg-readout,
 .fg-readout {
   font-family: var(--fg-font-mono);
   font-size: 0.875rem;
@@ -364,7 +364,7 @@
   display: block;
 }
 
-.fg-panel .fg-rite-line,
+#site .fg-panel .fg-rite-line,
 .fg-rite-line {
   font-family: var(--fg-font-display);
   font-weight: 400;
@@ -376,7 +376,7 @@
   text-wrap: balance;
 }
 
-.fg-panel .fg-rite-note,
+#site .fg-panel .fg-rite-note,
 .fg-rite-note {
   font-family: var(--fg-font-body);
   font-weight: 300;
@@ -408,7 +408,7 @@
 
 /* ---------- notices / errors ---------- */
 
-.fg-panel .fg-notice,
+#site .fg-panel .fg-notice,
 .fg-notice {
   font-family: var(--fg-font-body);
   border: 1px solid var(--fg-gunmetal);
@@ -495,7 +495,7 @@ html[data-ui-hidden] .fg-footer,
 }
 
 @media (max-width: 480px) {
-  .fg-panel { padding: var(--fg-space-3); }
+  #site .fg-panel { padding: var(--fg-space-3); }
   .fg-rites { grid-template-columns: 1fr; }
 }
 
