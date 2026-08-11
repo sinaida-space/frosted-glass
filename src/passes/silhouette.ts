@@ -190,8 +190,8 @@ export class SilhouettePass implements Pass {
 
   /**
    * Consumes one tracking frame: uploads mask and video, rebuilds the splat instance
-   * buffer, and computes `contact`. No GPU readback anywhere - `readPixels` would stall
-   * the pipeline for a number the CPU already has.
+   * buffer, and computes `contact`. Nothing is ever read back off the GPU here: that
+   * would stall the pipeline for a number the CPU already has.
    */
   update(frame: Readonly<TrackingFrame>, f: FrameContext): void {
     const p = f.params
