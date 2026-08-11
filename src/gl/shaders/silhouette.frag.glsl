@@ -21,7 +21,8 @@ out vec4 fragColor;
 
 uniform sampler2D uMask;      // R8 person confidence, y-down, covers the whole video frame
 uniform sampler2D uVideo;     // RGBA8 camera frame, y-down (uploadVideo does NOT flip Y)
-uniform sampler2D uProximity; // RGBA16F splat accumulation, already in screen space
+uniform sampler2D uProximity;       // RGBA16F splat accumulation, already in screen space
+uniform sampler2D uProximityFilled; // same, after the push-pull hole fill
 uniform sampler2D uHistory;   // previous frame's output, same size, for temporal damping
 
 // Video -> canvas `cover` fit, derived on the CPU from the video and canvas aspects.
@@ -134,14 +135,23 @@ void main() {
   coverage *= uHasMask;
 
   // --- G/B: depth and attribution ----------------------------------------
-  vec4 P = texture(uProximity, vUv);
-  float attribution = saturate(P.g * 4.0);
-  float dzSplat = P.r / max(P.g, 1e-4);
+  // Attribution is read from the RAW accumulation, not the filled one: B has to keep
+  // reporting whether a landmark actually vouched for this pixel, and after the fill
+  // every pixel near a body carries weight.
+  float attribution = saturate(texture(uProximity, vUv).g * 4.0);
 
-  // Where nothing splatted, P.g is 0 and the divide above yields 0 - which would read as
-  // "touching the glass", the single most wrong answer available. Cross-fade to the
-  // fallback on attribution instead, so unattributed limbs sit plausibly deep.
-  float dz = mix(uFallbackDz, dzSplat, attribution);
+  // Depth comes from the FILLED accumulation. Where landmarks reached, the fill leaves
+  // their answer untouched; where they did not - forearms, elbows, shoulders, hair, the
+  // outer half of an edge-on palm - it carries in the depth of the nearest attributed
+  // region instead of a constant, so there is no cliff at the wrist.
+  vec4 F = texture(uProximityFilled, vUv);
+  float dzFilled = F.r / max(F.g, 1e-4);
+
+  // The constant survives only as the root of the pyramid: on a frame with no landmarks
+  // at all, F.g is still zero everywhere and the divide above yields 0, which would read
+  // as "touching the glass" - the single most wrong answer available.
+  float filled = saturate(F.g * 4.0);
+  float dz = mix(uFallbackDz, dzFilled, filled);
   dz = clamp(dz, 0.0, 8.0);
 
   // Cheap temporal damping on depth only. Landmark confidence wobbles frame to frame and
