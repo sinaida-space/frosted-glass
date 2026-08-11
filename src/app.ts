@@ -310,6 +310,8 @@ export class App {
       this.lockedScale = this.effectiveRenderScale()
       this.lockedLevel = this.level
     } else if (s === 'idle') {
+      // Clearing the lock is all that is needed to resync: the next frame's
+      // resizeToDisplay picks up whatever the viewport became during the take.
       this.lockedLevel = null
     }
   }
@@ -430,7 +432,13 @@ export class App {
     const frame: Readonly<TrackingFrame> =
       this.debugFrame ?? this.tracker?.update(now) ?? EMPTY_FRAME
 
-    if (resizeToDisplay(this.ctx, this.effectiveRenderScale())) {
+    // Freeze the drawing buffer outright for the length of a take. Pinning the quality
+    // level and the render scale is not enough: resizeToDisplay derives its target from
+    // canvas.clientWidth/clientHeight every call, so entering fullscreen or dragging the
+    // window still reallocates the buffer mid-recording and corrupts the file in some
+    // encoders. The canvas may letterbox until the take ends; a stretched preview is
+    // recoverable, a ruined take is not.
+    if (!this.lockedLevel && resizeToDisplay(this.ctx, this.effectiveRenderScale())) {
       const { width, height } = this.ctx
       this.fog.resize(width, height)
       this.silhouette.resize(width, height)

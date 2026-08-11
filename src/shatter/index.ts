@@ -673,7 +673,12 @@ export class ShatterPass implements Pass {
     this.cracks.resize(w, h)
     this.hole.resize(w, h)
     this.heal.resize(Math.max(1, w >> 1), Math.max(1, h >> 1))
-    this.clearHeal()
+    // Only reset the heal mask to flat white when nothing is fading. Resizing mid-fade
+    // used to snap the mended seam clear and then re-fog it, a visible flash - and the
+    // adaptive quality ladder triggers resizes on its own, most often while shatter and
+    // heal are the very thing making frames expensive. Mid-fade, let the next update()
+    // repaint the mask at the new size from the still-running healActivity instead.
+    if (this.healActivity <= 0) this.clearHeal()
     this.holeDirty = true
   }
 
