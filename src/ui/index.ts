@@ -1,7 +1,7 @@
 import { params } from '../state/params'
 import type { Rig } from '../rig'
 import type { CanvasRecorder } from '../export/recorder'
-import { buildPanel, assertControlCoverage, type PanelDeps } from './panel'
+import { buildPanel, assertControlCoverage, type PanelDeps, type QualityChip } from './panel'
 import { installShortcutsOverlay } from './shortcuts'
 import { installToast } from './toast'
 import './panel.css'
@@ -13,6 +13,10 @@ export interface UIHandle {
 export interface UIDeps {
   rig?: Rig
   recorder?: CanvasRecorder
+  /** Adaptive-quality readout and pin control. Absent when the panel mounts standalone. */
+  quality?: QualityChip
+  /** Real camera switch. Absent when the panel mounts standalone. */
+  onSelectCamera?: (deviceId: string) => Promise<void>
 }
 
 /** Installs the Y2K control panel into `root` (#ui). Subscribes to `params`
@@ -30,7 +34,12 @@ export function installUI(root: HTMLElement, deps: UIDeps = {}): UIHandle {
   const toastHandle = installToast(root)
   const shortcutsHandle = installShortcutsOverlay(root)
 
-  const panelDeps: PanelDeps = { rig: deps.rig, recorder: deps.recorder }
+  const panelDeps: PanelDeps = {
+    rig: deps.rig,
+    recorder: deps.recorder,
+    quality: deps.quality,
+    onSelectCamera: deps.onSelectCamera,
+  }
   const panelHandle = buildPanel(() => shortcutsHandle.toggle(), panelDeps)
   root.appendChild(panelHandle.el)
 

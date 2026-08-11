@@ -144,8 +144,11 @@ export function applyHands(
         const lx = lm[j * 3]
         const ly = lm[j * 3 + 1]
         if (lx === undefined || ly === undefined) continue
-        // Landmarks are video-normalised, y down. Screen NDC, y up.
-        const nx = lx * 2 - 1
+        // Landmarks are video-normalised, y down, and NOT mirrored - unlike
+        // `centroidNdc`, which the tracker already mirrors. Screen NDC is y up and
+        // mirrored, so the flip has to be applied here or a hand pushes the shards on
+        // the wrong side of the pane from the one it appears on.
+        const nx = (lx * 2 - 1) * (params.mirror ? -1 : 1)
         const ny = 1 - ly * 2
         const dx = st.pos[0] - nx
         const dy = st.pos[1] - ny

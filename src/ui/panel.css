@@ -375,6 +375,18 @@ html[data-ui-hidden] #ui {
   background: var(--fg-field-hi);
 }
 
+/* Adaptive-quality chip in the panel header. A button, so it is focusable and can be
+   activated from the keyboard; the level colour is the only signal that carries meaning,
+   and it is doubled by the text so it never depends on colour alone. */
+.fg-quality-chip {
+  cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
+}
+.fg-quality-chip[data-level='medium'] { color: var(--fg-ink); }
+.fg-quality-chip[data-level='low'] { color: var(--fg-alarm, #e06); }
+.fg-quality-chip[data-pinned='true'] { border-color: var(--fg-accent); }
+
 .fg-record-dot {
   width: 8px;
   height: 8px;

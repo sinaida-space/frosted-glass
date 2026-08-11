@@ -362,7 +362,9 @@
 
 .fg-footer .fg-dot { opacity: 0.5; }
 
-html[data-ui-hidden="true"] .fg-footer,
+/* The rig sets a VALUELESS attribute (`setAttribute('data-ui-hidden', '')`), so this has
+   to match on presence. `="true"` never matched and the footer stayed up under `H`. */
+html[data-ui-hidden] .fg-footer,
 :fullscreen .fg-footer,
 :-webkit-full-screen .fg-footer {
   opacity: 0;

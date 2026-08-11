@@ -287,10 +287,38 @@ void main() {
 `
 
 export interface ContactReport {
+  /**
+   * The DEPTH term alone, 0 at `shatterThreshold` behind the pane and 1 at or in front of
+   * it. It used to be this term multiplied by `palmFlatness` and `confidence`, which made
+   * task 8's `strength >= 1` gate demand a geometrically perfect palm at exactly zero
+   * excess depth at full detector confidence, simultaneously. That never happens on a
+   * real camera, so the shatter could only ever be fired from the keyboard. Pose and
+   * detector quality are now GATES (below), not factors in the magnitude.
+   */
   strength: number
   ndc: [number, number]
   handIndex: number
+  /** Carried for the debug overlay: what the gates saw. */
+  palmFlatness: number
+  confidence: number
 }
+
+/**
+ * Pose and confidence gates for a contact.
+ *
+ * `palmFlatness` is 1 for a palm parallel to the pane and 0 edge-on: half-way is already
+ * unambiguously "presented to the glass" rather than "passing through frame". `confidence`
+ * is MediaPipe's handedness score, which sits high whenever a hand is genuinely tracked
+ * and collapses on a bad frame. Both are thresholds rather than multipliers so that
+ * neither one can quietly hold the break just below its trigger.
+ *
+ * NOT tuned against a live camera - see the integration report. These are the values the
+ * blocker note proposed, and they are the first thing to revisit at a rehearsal.
+ */
+const CONTACT_FLATNESS_GATE = 0.5
+const CONTACT_CONFIDENCE_GATE = 0.6
+/** Below this depth term there is no contact worth reporting at all. */
+const CONTACT_REPORT_FLOOR = 0.25
 
 /**
  * Joins "where is a person" (the 256^2 segmentation mask) to "how far behind the glass is
@@ -617,21 +645,33 @@ export class SilhouettePass implements Pass {
       const excess = hand.distanceM - glassDistance
       if (!Number.isFinite(excess)) continue
 
-      const proximity = clamp(1 - excess / Math.max(shatterThreshold, 1e-3), 0, 1)
-      const strength = proximity * hand.palmFlatness * hand.confidence
+      // Gates first: a hand that is edge-on, or barely detected, is not a hand pressing
+      // on the glass however close it happens to be.
+      if (!(hand.palmFlatness > CONTACT_FLATNESS_GATE)) continue
+      if (!(hand.confidence > CONTACT_CONFIDENCE_GATE)) continue
+
+      const strength = clamp(1 - excess / Math.max(shatterThreshold, 1e-3), 0, 1)
       if (!Number.isFinite(strength)) continue
 
       if (!best || strength > best.strength) {
-        best = { strength, ndc: [hand.centroidNdc[0], hand.centroidNdc[1]], handIndex: i }
+        best = {
+          strength,
+          ndc: [hand.centroidNdc[0], hand.centroidNdc[1]],
+          handIndex: i,
+          palmFlatness: hand.palmFlatness,
+          confidence: hand.confidence,
+        }
       }
     }
 
-    this.contact = best && best.strength >= 0.25 ? best : null
+    this.contact = best && best.strength >= CONTACT_REPORT_FLOOR ? best : null
   }
 
   // --- GPU ------------------------------------------------------------------
 
-  render(_f: FrameContext): void {
+  render(f: FrameContext): void {
+    // Everything this pass needs off the frame context was already read in update().
+    void f
     const gl = this.gl
 
     // A. Splat the landmark depths into the low-res proximity buffer. The clear is not
