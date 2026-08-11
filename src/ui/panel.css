@@ -27,7 +27,9 @@
   box-sizing: border-box;
 }
 
-html[data-ui-hidden] #ui {
+html[data-ui-hidden] #ui,
+/* The ?debug=1 readout is chrome too: `H` is meant to leave a clean stage. */
+html[data-ui-hidden] #fg-debug {
   display: none;
 }
 
