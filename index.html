@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0a0c" />
+    <meta name="theme-color" content="#050505" />
     <meta name="color-scheme" content="dark" />
 
     <title>Frosted Glass</title>
@@ -27,6 +27,11 @@
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+    <!-- Self-hosted display and body faces — preloaded so the terminal chrome and
+         welcome prose don't flash a fallback face on first paint. -->
+    <link rel="preload" href="/fonts/GeistPixel.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/LibreFranklin-Light.woff2" as="font" type="font/woff2" crossorigin />
+
     <!--
       script-src has to name cdn.jsdelivr.net and allow wasm compilation. MediaPipe's
       FilesetResolver appends a <script> tag pointing at vision_wasm_*_internal.js on the
@@ -34,9 +39,11 @@
       could never start; connect-src alone is not enough because the glue is loaded as a
       script element, not fetched. 'wasm-unsafe-eval' is the narrow grant that lets the
       .wasm compile without opening up eval().
+      font-src 'self' is required for the self-hosted Geist Pixel / Libre Franklin woff2s;
+      without it, @font-face requests are blocked and both faces fall back to system fonts.
       frame-ancestors is ignored in a meta tag and is set as a real header at the edge.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://static.cloudflareinsights.com; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; worker-src 'self' blob:" />
 
     <style>
       html,
@@ -45,7 +52,7 @@
         padding: 0;
         height: 100%;
         overflow: hidden;
-        background: #0a0a0c;
+        background: #050505;
       }
       /* Fixed rather than a percentage height: `height: 100%` on a canvas whose parent
          has auto height resolves to the 150px intrinsic default, which is what the

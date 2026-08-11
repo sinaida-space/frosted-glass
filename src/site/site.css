@@ -1,28 +1,46 @@
 /* Frosted Glass — site chrome (welcome gate, privacy panel, footer).
-   Tokens only here; nothing outside :root introduces a raw color/size value.
-   System fonts only — no @font-face, no CDN, per issue #11 boundaries. */
+   Sinaida design system: void ground, brand red for emphasis, Geist Pixel
+   for all chrome/headings, Libre Franklin Light for running prose.
+   Self-hosted fonts only — no CDN, per issue #11 boundaries. */
+
+@font-face {
+  font-family: 'Geist Pixel';
+  src: url('/fonts/GeistPixel.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Libre Franklin Light';
+  src: url('/fonts/LibreFranklin-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
-  --fg-bg: #0a0a0c;
-  --fg-bg-raised: #131316;
-  --fg-glass: rgba(20, 20, 24, 0.86);
-  --fg-line: rgba(255, 255, 255, 0.14);
-  --fg-line-strong: rgba(255, 255, 255, 0.28);
-  --fg-ink: #f2f1ee;
-  --fg-ink-dim: #b9b7b2;
-  --fg-ink-faint: #85837e;
-  --fg-accent: #e2453a;
-  --fg-accent-ink: #ffe9e7;
-  /* Darker than --fg-accent specifically for button fills: e2453a under white
-     text is ~3.5:1, short of the 4.5:1 minimum for button-label-sized text.
-     c93a30 (already the old hover shade) clears 5:1 with white. */
-  --fg-accent-btn: #c93a30;
-  --fg-accent-btn-hover: #a92e26;
-  --fg-focus: #6fb7ff;
+  --fg-void: #050505;
+  --fg-panel-bg: rgba(5, 5, 5, 0.92);
+  --fg-graphite: #262626;
+  --fg-gunmetal: #4d4d4d;
+  --fg-slate: #737373;
+  --fg-fog: #999999;
+  --fg-haze: #cccccc;
+  --fg-red: #cd0000;
+  --fg-red-legible: #ff1a1a;
+  --fg-cathode: #a7bebe;
+  --fg-ink: #f6f6f6;
 
-  --fg-font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  --fg-font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --fg-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --fg-glow-core: rgba(205, 0, 0, 0.55);
+  --fg-glow-strong: rgba(205, 0, 0, 0.35);
+  --fg-glow-medium: rgba(205, 0, 0, 0.2);
+  --fg-glow-ambient: rgba(205, 0, 0, 0.1);
+  --fg-glow-whisper: rgba(205, 0, 0, 0.05);
+
+  --fg-font-display: 'Geist Pixel', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fg-font-body: 'Libre Franklin Light', 'Helvetica Neue', Arial, sans-serif;
+  --fg-font-mono: 'Geist Pixel', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --fg-step-0: 1rem;
   --fg-step-1: 1.25rem;
@@ -36,7 +54,7 @@
   --fg-space-4: 2.25rem;
   --fg-space-5: 3.5rem;
 
-  --fg-radius: 2px;
+  --fg-radius: 0;
   --fg-dur: 320ms;
   --fg-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -53,13 +71,12 @@
 }
 
 #site :focus-visible {
-  outline: 2px solid var(--fg-focus);
+  outline: 2px solid var(--fg-red-legible);
   outline-offset: 2px;
 }
 
 #site button {
   font: inherit;
-  color: inherit;
 }
 
 /* ---------- overlay shell, shared by the gate and the privacy panel ---------- */
@@ -72,64 +89,126 @@
   align-items: center;
   justify-content: center;
   padding: var(--fg-space-3);
-  background: rgba(4, 4, 5, 0.82);
+  background: rgba(2, 2, 2, 0.86);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 
 .fg-overlay[hidden] { display: none; }
 
+/* CRT scanline overlay — DOM chrome layer only, never over the live canvas.
+   Scoped to the overlay itself, which only exists while the gate/privacy
+   panel is open, so it never sits on top of the running instrument. */
+.fg-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.03) 0px,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: screen;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fg-overlay::before { display: none; }
+}
+
 /* The privacy panel can be opened from inside the welcome gate, which is also
    an .fg-overlay at the same z-index — force it above regardless of DOM order. */
 .fg-overlay-top { z-index: 110; }
 
 .fg-panel {
+  position: relative;
+  z-index: 2;
   width: min(640px, 100%);
   max-height: min(88vh, 820px);
   overflow-y: auto;
-  background: var(--fg-glass);
-  border: 1px solid var(--fg-line);
+  background: var(--fg-panel-bg);
+  border: 1px solid var(--fg-graphite);
   border-radius: var(--fg-radius);
   padding: var(--fg-space-4);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 40px var(--fg-glow-ambient);
 }
 
 .fg-panel h1 {
   font-family: var(--fg-font-display);
-  font-weight: 500;
+  font-weight: 400;
   font-size: clamp(var(--fg-step-3), 3vw + 1rem, var(--fg-step-4));
-  line-height: 1.15;
-  letter-spacing: 0.01em;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-red);
+  text-shadow: 0 0 12px var(--fg-glow-medium);
   margin: 0 0 var(--fg-space-2);
   text-wrap: balance;
 }
 
+/* Blinking block cursor after the gate title only — a single, identifiable
+   heading, not every h1 in the document. */
+#fg-gate-title::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.9em;
+  margin-left: 0.15em;
+  background: var(--fg-red);
+  vertical-align: -0.1em;
+  animation: fg-blink 1s steps(1) infinite;
+}
+
+@keyframes fg-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #fg-gate-title::after { animation: none; }
+}
+
 .fg-panel h2 {
   font-family: var(--fg-font-display);
-  font-weight: 500;
+  font-weight: 400;
   font-size: var(--fg-step-2);
-  line-height: 1.2;
+  line-height: 1.3;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--fg-ink);
   margin: 0 0 var(--fg-space-1);
   text-wrap: balance;
 }
 
 .fg-panel p {
+  font-family: var(--fg-font-body);
+  font-weight: 300;
   font-size: var(--fg-step-0);
-  line-height: 1.55;
+  line-height: 1.6;
   max-width: 65ch;
   color: var(--fg-ink);
   margin: 0 0 var(--fg-space-2);
 }
 
+/* Specificity note: these are targeted as ".fg-panel .foo" (0,2,0) rather than
+   plain ".foo" (0,1,0) because they land on <p> elements inside .fg-panel, and
+   the base ".fg-panel p" rule above is (0,1,1) — a bare class would silently
+   lose to it and fall back to the default paragraph color. */
+.fg-panel .fg-small,
 .fg-small {
+  font-family: var(--fg-font-body);
+  font-weight: 300;
   font-size: 0.875rem;
-  line-height: 1.5;
-  color: var(--fg-ink-dim);
+  line-height: 1.55;
+  color: var(--fg-haze);
 }
 
 .fg-panel a {
-  color: var(--fg-accent-ink);
-  text-decoration-color: var(--fg-line-strong);
+  color: var(--fg-red-legible);
+  text-decoration-color: var(--fg-gunmetal);
   text-underline-offset: 3px;
 }
 
@@ -147,30 +226,32 @@
 
 .fg-progress li {
   flex: 1;
-  height: 3px;
-  background: var(--fg-line);
-  border-radius: 2px;
+  height: 2px;
+  background: var(--fg-graphite);
+  border-radius: 0;
   position: relative;
 }
 
 .fg-progress li[data-state="done"],
 .fg-progress li[data-state="current"] {
-  background: var(--fg-accent);
+  background: var(--fg-red);
+  box-shadow: 0 0 6px var(--fg-glow-medium);
 }
 
-.fg-progress li[data-state="upcoming"] { background: var(--fg-line); }
+.fg-progress li[data-state="upcoming"] { background: var(--fg-graphite); }
 
 /* ---------- steps ---------- */
 
 .fg-step { display: none; }
 .fg-step[data-active="true"] { display: block; }
 
+.fg-panel .fg-step-label,
 .fg-step-label {
   font-family: var(--fg-font-mono);
   font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--fg-ink-faint);
+  color: var(--fg-red-legible);
   margin: 0 0 var(--fg-space-1);
 }
 
@@ -178,33 +259,42 @@
 
 .fg-btn {
   appearance: none;
-  border: 1px solid var(--fg-line-strong);
+  font-family: var(--fg-font-display);
+  border: 1px solid var(--fg-gunmetal);
   background: transparent;
   color: var(--fg-ink);
-  padding: 0.7em 1.3em;
+  padding: 0.8em 1.4em;
   border-radius: var(--fg-radius);
   cursor: pointer;
-  font-size: 0.95rem;
-  transition: border-color var(--fg-dur) var(--fg-ease), background var(--fg-dur) var(--fg-ease);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-height: 44px;
+  transition: border-color var(--fg-dur) var(--fg-ease), background var(--fg-dur) var(--fg-ease), box-shadow var(--fg-dur) var(--fg-ease), color var(--fg-dur) var(--fg-ease);
 }
 
-.fg-btn:hover { border-color: var(--fg-ink); }
+.fg-btn:hover { border-color: var(--fg-red); color: var(--fg-red-legible); }
 
 .fg-btn-primary {
-  background: var(--fg-accent-btn);
-  border-color: var(--fg-accent-btn);
-  /* Plain white, not --fg-accent-ink: needed for the button fill to clear
-     4.5:1 (c93a30/ffe9e7 alone is only ~4.4:1). c93a30/#fff is ~5.1:1. */
-  color: #fff;
-  font-weight: 600;
+  background: transparent;
+  border-color: var(--fg-red);
+  color: var(--fg-red-legible);
+  box-shadow: 0 0 12px var(--fg-glow-medium);
+  font-weight: 400;
 }
 
-.fg-btn-primary:hover { background: var(--fg-accent-btn-hover); border-color: var(--fg-accent-btn-hover); }
+.fg-btn-primary:hover {
+  background: var(--fg-red);
+  border-color: var(--fg-red);
+  color: var(--fg-void);
+  box-shadow: 0 0 20px var(--fg-glow-strong);
+}
 
 .fg-btn-primary:disabled,
 .fg-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .fg-actions {
@@ -222,30 +312,40 @@
   gap: var(--fg-space-2);
   flex-wrap: wrap;
   margin: var(--fg-space-2) 0;
+  border: none;
+  padding: 0;
 }
 
 .fg-distance-choices label {
-  border: 1px solid var(--fg-line-strong);
+  font-family: var(--fg-font-display);
+  border: 1px solid var(--fg-gunmetal);
   border-radius: var(--fg-radius);
-  padding: 0.6em 1em;
+  padding: 0.7em 1.1em;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: 0.5em;
+  min-height: 44px;
 }
 
-.fg-distance-choices input[type="radio"] { accent-color: var(--fg-accent); }
+.fg-distance-choices input[type="radio"] { accent-color: var(--fg-red); }
 
 .fg-distance-choices label:has(input:checked) {
-  border-color: var(--fg-accent);
-  background: rgba(226, 69, 58, 0.12);
+  border-color: var(--fg-red);
+  color: var(--fg-red-legible);
+  background: var(--fg-glow-whisper);
+  box-shadow: 0 0 10px var(--fg-glow-ambient);
 }
 
+.fg-panel .fg-readout,
 .fg-readout {
   font-family: var(--fg-font-mono);
   font-size: 0.875rem;
-  color: var(--fg-ink-dim);
+  letter-spacing: 0.03em;
+  color: var(--fg-haze);
   margin-top: var(--fg-space-1);
 }
 
@@ -264,18 +364,25 @@
   display: block;
 }
 
+.fg-panel .fg-rite-line,
 .fg-rite-line {
   font-family: var(--fg-font-display);
+  font-weight: 400;
   font-size: var(--fg-step-1);
-  line-height: 1.3;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  color: var(--fg-ink);
   margin: var(--fg-space-1) 0 0.25em;
   text-wrap: balance;
 }
 
+.fg-panel .fg-rite-note,
 .fg-rite-note {
+  font-family: var(--fg-font-body);
+  font-weight: 300;
   font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--fg-ink-dim);
+  line-height: 1.5;
+  color: var(--fg-haze);
   margin: 0;
 }
 
@@ -283,9 +390,9 @@
 
 .fg-loadbar {
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--fg-line);
+  height: 4px;
+  border-radius: 0;
+  background: var(--fg-graphite);
   overflow: hidden;
   margin: var(--fg-space-2) 0 var(--fg-space-1);
 }
@@ -293,21 +400,25 @@
 .fg-loadbar > span {
   display: block;
   height: 100%;
-  background: var(--fg-accent);
+  background: var(--fg-red);
+  box-shadow: 0 0 8px var(--fg-glow-medium);
   width: 0%;
   transition: width var(--fg-dur) var(--fg-ease);
 }
 
 /* ---------- notices / errors ---------- */
 
+.fg-panel .fg-notice,
 .fg-notice {
-  border: 1px solid var(--fg-line-strong);
-  border-left: 3px solid var(--fg-accent);
+  font-family: var(--fg-font-body);
+  border: 1px solid var(--fg-gunmetal);
+  border-left: 3px solid var(--fg-red);
   border-radius: var(--fg-radius);
   padding: var(--fg-space-2);
   margin: var(--fg-space-2) 0;
   font-size: 0.9rem;
   line-height: 1.5;
+  color: var(--fg-ink);
 }
 
 /* ---------- resume prompt ---------- */
@@ -319,15 +430,21 @@
   display: flex;
   align-items: center;
   gap: var(--fg-space-2);
-  background: var(--fg-glass);
-  border: 1px solid var(--fg-line);
+  background: var(--fg-panel-bg);
+  border: 1px solid var(--fg-graphite);
   border-radius: var(--fg-radius);
   padding: var(--fg-space-2) var(--fg-space-3);
   max-width: min(90vw, 460px);
+  box-shadow: 0 0 24px var(--fg-glow-ambient);
 }
 
 .fg-resume[hidden] { display: none; }
-.fg-resume p { margin: 0; font-size: 0.875rem; }
+.fg-resume p {
+  margin: 0;
+  font-family: var(--fg-font-body);
+  font-size: 0.875rem;
+  color: var(--fg-ink);
+}
 
 /* ---------- footer ---------- */
 
@@ -340,25 +457,30 @@
   align-items: center;
   gap: 0 var(--fg-space-2);
   padding: 0.6em var(--fg-space-3);
+  font-family: var(--fg-font-mono);
   font-size: 0.75rem;
-  color: var(--fg-ink-faint);
-  background: linear-gradient(to top, rgba(4, 4, 5, 0.7), transparent);
+  letter-spacing: 0.03em;
+  /* fog (#999) on the void-derived gradient below clears 4.5:1 at 12px;
+     ink-faint (#85837e, ~2.6:1) was the bug this replaces. */
+  color: var(--fg-fog);
+  background: linear-gradient(to top, rgba(5, 5, 5, 0.85), transparent);
   transition: opacity var(--fg-dur) var(--fg-ease), transform var(--fg-dur) var(--fg-ease);
 }
 
 .fg-footer a,
 .fg-footer button {
-  color: var(--fg-ink-dim);
+  color: var(--fg-haze);
   text-decoration: none;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
   font-size: inherit;
+  font-family: inherit;
 }
 
 .fg-footer a:hover,
-.fg-footer button:hover { color: var(--fg-ink); }
+.fg-footer button:hover { color: var(--fg-red-legible); }
 
 .fg-footer .fg-dot { opacity: 0.5; }
 
@@ -379,7 +501,7 @@ html[data-ui-hidden] .fg-footer,
 
 /* ---------- rite diagrams ---------- */
 
-.fg-rite svg { color: var(--fg-ink-dim); }
+.fg-rite svg { color: var(--fg-haze); }
 
 .fg-diagram-hand { animation: fg-hand-move 3.6s ease-in-out infinite; }
 .fg-diagram-hand-break { animation: fg-hand-move-break 3.6s ease-in-out infinite; }
