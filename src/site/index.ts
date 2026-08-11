@@ -17,5 +17,5 @@ export async function installSite(deps: SiteDeps): Promise<void> {
   const privacy = installPrivacyPanel(root)
   installFooter(root, { onOpenPrivacy: privacy.open })
 
-  await runWelcome(root, deps, privacy.open)
+  await runWelcome(root, deps, privacy)
 }

@@ -13,6 +13,11 @@
   --fg-ink-faint: #85837e;
   --fg-accent: #e2453a;
   --fg-accent-ink: #ffe9e7;
+  /* Darker than --fg-accent specifically for button fills: e2453a under white
+     text is ~3.5:1, short of the 4.5:1 minimum for button-label-sized text.
+     c93a30 (already the old hover shade) clears 5:1 with white. */
+  --fg-accent-btn: #c93a30;
+  --fg-accent-btn-hover: #a92e26;
   --fg-focus: #6fb7ff;
 
   --fg-font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
@@ -73,6 +78,10 @@
 }
 
 .fg-overlay[hidden] { display: none; }
+
+/* The privacy panel can be opened from inside the welcome gate, which is also
+   an .fg-overlay at the same z-index — force it above regardless of DOM order. */
+.fg-overlay-top { z-index: 110; }
 
 .fg-panel {
   width: min(640px, 100%);
@@ -182,13 +191,15 @@
 .fg-btn:hover { border-color: var(--fg-ink); }
 
 .fg-btn-primary {
-  background: var(--fg-accent);
-  border-color: var(--fg-accent);
-  color: var(--fg-accent-ink);
+  background: var(--fg-accent-btn);
+  border-color: var(--fg-accent-btn);
+  /* Plain white, not --fg-accent-ink: needed for the button fill to clear
+     4.5:1 (c93a30/ffe9e7 alone is only ~4.4:1). c93a30/#fff is ~5.1:1. */
+  color: #fff;
   font-weight: 600;
 }
 
-.fg-btn-primary:hover { background: #c93a30; border-color: #c93a30; }
+.fg-btn-primary:hover { background: var(--fg-accent-btn-hover); border-color: var(--fg-accent-btn-hover); }
 
 .fg-btn-primary:disabled,
 .fg-btn:disabled {
@@ -398,9 +409,12 @@ html[data-ui-hidden="true"] .fg-footer,
   50% { transform: translateX(6px); }
 }
 
+/* This g now sits inside a static scale(-1,1) wrapper (see diagrams.ts) so its
+   own X axis is mirrored: a positive translateX here reads as leftward — toward
+   the left hand — on screen. */
 @keyframes fg-heal-hand-right {
   0%, 100% { transform: translateX(0); }
-  50% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
 }
 
 @keyframes fg-heal-fog {
