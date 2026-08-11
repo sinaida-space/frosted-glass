@@ -2,16 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frosted-glass-dev",
+      "name": "frosted-glass",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5199"],
-      "port": 5199
-    },
-    {
-      "name": "frosted-glass-preview-11",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "preview", "--outDir", "/tmp/fg-build-11", "--port", "5198", "--strictPort"],
-      "port": 5198
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
     }
   ]
 }
