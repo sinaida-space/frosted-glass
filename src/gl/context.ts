@@ -67,11 +67,17 @@ export function resizeToDisplay(ctx: GLContext, renderScale: number): boolean {
   const { canvas, dpr, caps } = ctx
   const cap = Math.min(MAX_DIMENSION, caps.maxTextureSize)
 
-  let targetW = Math.max(1, Math.round(canvas.clientWidth * dpr * renderScale))
-  let targetH = Math.max(1, Math.round(canvas.clientHeight * dpr * renderScale))
+  const wantW = Math.max(1, canvas.clientWidth * dpr * renderScale)
+  const wantH = Math.max(1, canvas.clientHeight * dpr * renderScale)
 
-  if (targetW > cap) targetW = cap
-  if (targetH > cap) targetH = cap
+  // Clamp both axes by ONE shared factor so the aspect ratio survives. Clamping
+  // each axis independently silently distorts the buffer - a 1280x720 canvas at
+  // dpr 2 would land on 1920x1440 (4:3) instead of 1920x1080 - and that aspect
+  // feeds the off-axis frustum, so the parallax would be built for a window
+  // that is not the one on screen.
+  const fit = Math.min(1, cap / wantW, cap / wantH)
+  const targetW = Math.max(1, Math.round(wantW * fit))
+  const targetH = Math.max(1, Math.round(wantH * fit))
 
   if (canvas.width === targetW && canvas.height === targetH) {
     return false
