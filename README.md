@@ -4,6 +4,8 @@
 
 A browser instrument that turns a webcam into a pane of fogged glass. Move behind it and your body becomes a shape in the fog, lit and scattered in real time, built for stage backdrops and for footage worth keeping. Everything runs inside the browser tab: no video is uploaded, and nothing is recorded unless you press record and save the take.
 
+> Production mirror. Development and issue tracking run in a private development environment; releases are published here.
+
 **Live:** https://sinaida-space.github.io/frosted-glass/
 
 ## How it looks
