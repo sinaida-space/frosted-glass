@@ -74,6 +74,6 @@ Any state can be saved as a named preset or copied as a share link that encodes 
 
 No account, no cookies, no video upload. The full breakdown, including what `localStorage` holds and which third parties the model files touch, is in the privacy panel reachable from the app’s footer.
 
-Built by [Sinaida Krivchenko](https://sinaida.eu)
+Concept and experience design by [Sinaida Krivchenko](https://sinaida.eu), built with AI coding agents.
 
-License: GPL-3.0
+License: Apache-2.0
